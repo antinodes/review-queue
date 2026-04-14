@@ -94,7 +94,7 @@ export function renderSection(
       ]
       if (showThreads) cells.push(renderThreadsTd(pr.unresolvedThreads, theme))
       if (showCI) cells.push(`<td class="ci-cell">${ciStatusHtml(pr.ciState)}</td>`)
-      if (showAuthor) cells.push(`<td>${escapeHtml(pr.author)}</td>`)
+      if (showAuthor) cells.push(`<td class="author-cell">${escapeHtml(pr.author)}</td>`)
       cells.push(`<td class="days-cell">${pr.daysOpen}</td>`)
 
       const row = document.createElement('tr')
