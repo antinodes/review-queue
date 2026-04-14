@@ -1,23 +1,25 @@
-import { searchReviewRequested, fetchPRDetails } from './github.ts'
-import { classifyPRs } from './classify.ts'
-import { renderSection, renderSectionHeading, renderSummary, renderError } from './render.ts'
+import { searchReviewRequested, searchAuthored, fetchPRDetails } from './github.ts'
+import type { SearchPR } from './github.ts'
+import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, isDependabot } from './classify.ts'
+import type { ReviewResult, MyPRsResult, DependabotResult } from './classify.ts'
+import { renderSection, renderSummary, renderError } from './render.ts'
 import { getToken, saveToken, clearToken } from './token.ts'
 import { themes, getTheme, saveTheme, applyTheme } from './themes.ts'
 import type { ThemeConfig } from './themes.ts'
 import './style.css'
 
 const REFRESH_INTERVAL_MS = 3 * 60 * 1000
-
 const $ = (id: string) => document.getElementById(id)!
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let hasLoadedOnce = false
 let activeTheme: ThemeConfig = getTheme()
+let activeTab: 'reviews' | 'myPRs' | 'dependabot' = 'reviews'
 
-// Cache last load results for re-rendering on theme switch
-let lastReady: import('./classify.ts').ClassifiedPR[] = []
-let lastBlocked: import('./classify.ts').ClassifiedPR[] = []
-let lastSkipped = 0
+// Cached results for re-rendering on theme/tab switch
+let cachedReviews: ReviewResult | null = null
+let cachedMyPRs: MyPRsResult | null = null
+let cachedDependabot: DependabotResult | null = null
 
 function showTokenPrompt(): void {
   $('token-prompt').classList.remove('hidden')
@@ -30,20 +32,86 @@ function hideTokenPrompt(): void {
   $('token-prompt').classList.add('hidden')
 }
 
-function applyThemeToUI(): void {
-  renderSectionHeading($('ready-section'), activeTheme.sectionReady)
-  renderSectionHeading($('blocked-section'), activeTheme.sectionBlocked)
+// ── Tab switching ──
 
-  if (hasLoadedOnce) {
-    renderSection($('ready-list'), lastReady, false, activeTheme)
-    renderSection($('blocked-list'), lastBlocked, true, activeTheme)
-    renderSummary($('summary'), activeTheme.summaryFn(lastReady.length, lastBlocked.length, lastSkipped))
+function switchTab(tab: typeof activeTab): void {
+  activeTab = tab
+  for (const t of ['reviews', 'myPRs', 'dependabot'] as const) {
+    $(`tab-${t}`).classList.toggle('hidden', t !== tab)
+  }
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset.tab === tab)
+  })
+  renderActiveTab()
+}
+
+function renderActiveTab(): void {
+  if (!hasLoadedOnce) return
+  const t = activeTheme
+
+  if (activeTab === 'reviews' && cachedReviews) {
+    const r = cachedReviews
+    setText('reviews-ready-h', t.sections.ready)
+    setText('reviews-blocked-h', t.sections.blocked)
+    renderSection($('reviews-ready'), r.ready, t)
+    renderSection($('reviews-blocked'), r.blocked, t, { showThreads: true })
+    renderSummary($('reviews-summary'),
+      `${r.ready.length} ready, ${r.blocked.length} blocked, ${r.skippedCount} skipped`)
   }
 
-  // Update active state on picker buttons
-  document.querySelectorAll('.theme-btn').forEach((btn) => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.theme === activeTheme.id)
-  })
+  if (activeTab === 'myPRs' && cachedMyPRs) {
+    const m = cachedMyPRs
+    setText('my-ready-h', t.sections.readyToMerge)
+    setText('my-needsReview-h', t.sections.needsReview)
+    setText('my-blocked-h', t.sections.myBlocked)
+    setText('my-failing-h', t.sections.failingCI)
+    setText('my-draft-h', t.sections.draft)
+    renderSection($('my-ready'), m.readyToMerge, t, { showAuthor: false })
+    renderSection($('my-needsReview'), m.needsReview, t, { showAuthor: false })
+    renderSection($('my-blocked'), m.blocked, t, { showThreads: true, showAuthor: false })
+    renderSection($('my-failing'), m.failing, t, { showCI: true, showAuthor: false })
+    renderSection($('my-draft'), m.drafts, t, { showAuthor: false })
+    const total = m.readyToMerge.length + m.needsReview.length + m.blocked.length + m.failing.length + m.drafts.length
+    renderSummary($('my-summary'),
+      `${total} open — ${m.readyToMerge.length} ready to merge, ${m.needsReview.length} needs review, ${m.blocked.length} blocked, ${m.failing.length} failing, ${m.drafts.length} draft`)
+  }
+
+  if (activeTab === 'dependabot' && cachedDependabot) {
+    const d = cachedDependabot
+    setText('dep-ready-h', t.sections.depReady)
+    setText('dep-blocked-h', t.sections.depBlocked)
+    setText('dep-failing-h', t.sections.depFailing)
+    renderSection($('dep-ready'), d.ready, t, { showAuthor: false })
+    renderSection($('dep-blocked'), d.blocked, t, { showThreads: true, showAuthor: false })
+    renderSection($('dep-failing'), d.failing, t, { showCI: true, showAuthor: false })
+    const total = d.ready.length + d.blocked.length + d.failing.length
+    renderSummary($('dep-summary'),
+      `${total} open — ${d.ready.length} ready, ${d.blocked.length} blocked, ${d.failing.length} failing`)
+  }
+}
+
+function setText(id: string, text: string): void {
+  $(id).textContent = text
+}
+
+// ── Data fetching ──
+
+async function fetchDetails(token: string, prs: SearchPR[]): Promise<Map<string, import('./github.ts').PRDetail[]>> {
+  const byRepo = new Map<string, number[]>()
+  for (const pr of prs) {
+    if (pr.isDraft) continue
+    const list = byRepo.get(pr.repo) ?? []
+    list.push(pr.number)
+    byRepo.set(pr.repo, list)
+  }
+
+  const entries = await Promise.all(
+    [...byRepo.entries()].map(async ([repo, numbers]) => {
+      const details = await fetchPRDetails(token, repo, numbers)
+      return [repo, details] as const
+    }),
+  )
+  return new Map(entries)
 }
 
 async function loadQueue(token: string): Promise<void> {
@@ -57,41 +125,32 @@ async function loadQueue(token: string): Promise<void> {
   }
 
   try {
-    const prs = await searchReviewRequested(token)
+    // Fetch review-requested and authored PRs in parallel
+    const [reviewPRs, authoredPRs] = await Promise.all([
+      searchReviewRequested(token),
+      searchAuthored(token),
+    ])
 
-    const byRepo = new Map<string, number[]>()
-    for (const pr of prs) {
-      if (pr.isDraft) continue
-      const list = byRepo.get(pr.repo) ?? []
-      list.push(pr.number)
-      byRepo.set(pr.repo, list)
-    }
+    // Split review PRs into human and dependabot
+    const humanReviewPRs = reviewPRs.filter((pr) => !isDependabot(pr))
+    const dependabotPRs = reviewPRs.filter(isDependabot)
 
-    const detailEntries = await Promise.all(
-      [...byRepo.entries()].map(async ([repo, numbers]) => {
-        const details = await fetchPRDetails(token, repo, numbers)
-        return [repo, details] as const
-      }),
-    )
-    const detailsByRepo = new Map(detailEntries)
+    // Collect all unique PRs for GraphQL batching
+    const allPRs = [...reviewPRs, ...authoredPRs]
+    const detailsByRepo = await fetchDetails(token, allPRs)
 
-    const { ready, blocked, skippedCount } = classifyPRs(prs, detailsByRepo)
-
-    lastReady = ready
-    lastBlocked = blocked
-    lastSkipped = skippedCount
-
-    renderSection($('ready-list'), ready, false, activeTheme)
-    renderSection($('blocked-list'), blocked, true, activeTheme)
-    renderSummary($('summary'), activeTheme.summaryFn(ready.length, blocked.length, skippedCount))
+    cachedReviews = classifyReviewPRs(humanReviewPRs, detailsByRepo)
+    cachedMyPRs = classifyMyPRs(authoredPRs, detailsByRepo)
+    cachedDependabot = classifyDependabotPRs(dependabotPRs, detailsByRepo)
 
     $('loading').classList.add('hidden')
     $('progress-bar').classList.remove('active')
     $('content').classList.remove('hidden')
     hasLoadedOnce = true
 
+    renderActiveTab()
     updateTimestamp()
-    updateBadge(ready.length)
+    updateBadge(cachedReviews.ready.length)
   } catch (err) {
     $('loading').classList.add('hidden')
     $('progress-bar').classList.remove('active')
@@ -116,17 +175,39 @@ function updateTimestamp(): void {
 
 function updateBadge(count: number): void {
   if ('setAppBadge' in navigator) {
-    if (count > 0) {
-      navigator.setAppBadge(count)
-    } else {
-      navigator.clearAppBadge()
-    }
+    if (count > 0) navigator.setAppBadge(count)
+    else navigator.clearAppBadge()
   }
 }
 
 function startAutoRefresh(token: string): void {
   if (refreshTimer) clearInterval(refreshTimer)
   refreshTimer = setInterval(() => loadQueue(token), REFRESH_INTERVAL_MS)
+}
+
+// ── UI init ──
+
+function initTabs(): void {
+  const bar = $('tab-bar')
+  for (const [key, label] of [
+    ['reviews', activeTheme.tabs.reviews],
+    ['myPRs', activeTheme.tabs.myPRs],
+    ['dependabot', activeTheme.tabs.dependabot],
+  ] as const) {
+    const btn = document.createElement('button')
+    btn.className = `tab-btn ${key === activeTab ? 'active' : ''}`
+    btn.dataset.tab = key
+    btn.textContent = label
+    btn.addEventListener('click', () => switchTab(key as typeof activeTab))
+    bar.appendChild(btn)
+  }
+}
+
+function updateTabLabels(): void {
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    const tab = (btn as HTMLElement).dataset.tab as keyof typeof activeTheme.tabs
+    if (tab && activeTheme.tabs[tab]) btn.textContent = activeTheme.tabs[tab]
+  })
 }
 
 function initThemePicker(): void {
@@ -139,7 +220,11 @@ function initThemePicker(): void {
     btn.addEventListener('click', () => {
       activeTheme = themes[theme.id]
       saveTheme(theme.id)
-      applyThemeToUI()
+      document.querySelectorAll('.theme-btn').forEach((b) => {
+        b.classList.toggle('active', (b as HTMLElement).dataset.theme === theme.id)
+      })
+      updateTabLabels()
+      renderActiveTab()
     })
     picker.appendChild(btn)
   }
@@ -148,8 +233,8 @@ function initThemePicker(): void {
 // Init
 document.addEventListener('DOMContentLoaded', () => {
   applyTheme(activeTheme.id)
+  initTabs()
   initThemePicker()
-  applyThemeToUI()
 
   const tokenForm = $('token-form') as HTMLFormElement
   const tokenInput = $('token-input') as HTMLInputElement

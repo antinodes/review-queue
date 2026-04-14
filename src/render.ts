@@ -20,45 +20,47 @@ function typeClass(type: string): string {
 }
 
 const RPG_ICON_MAP: Record<string, string> = {
-  feat: 'ra-sword',
-  fix: 'ra-wrench',
-  build: 'ra-anvil',
-  chore: 'ra-anvil',
-  refactor: 'ra-cog',
-  test: 'ra-scroll-unfurled',
-  docs: 'ra-scroll-unfurled',
-  ci: 'ra-anvil',
-  perf: 'ra-lightning-sword',
-  style: 'ra-gem-pendant',
-  revert: 'ra-spinning-sword',
+  feat: 'ra-sword', fix: 'ra-wrench', build: 'ra-anvil', chore: 'ra-anvil',
+  refactor: 'ra-cog', test: 'ra-scroll-unfurled', docs: 'ra-scroll-unfurled',
+  ci: 'ra-anvil', perf: 'ra-lightning-sword', style: 'ra-gem-pendant', revert: 'ra-spinning-sword',
 }
 
 function renderTypeTd(type: string, theme: ThemeConfig): string {
   if (!type) return '<td class="type-cell"></td>'
-
   if (theme.typeIconMode === 'rpg-awesome') {
     const icon = RPG_ICON_MAP[type] ?? 'ra-scroll-unfurled'
     const label = theme.typeLabels[type] ?? type
     return `<td class="type-cell"><i class="ra ${icon} quest-type ${typeClass(type)}" title="${escapeHtml(label)}"></i></td>`
   }
-
   const label = theme.typeLabels[type] ?? type
   return `<td class="type-cell"><span class="type-badge ${typeClass(type)}">${escapeHtml(label)}</span></td>`
 }
 
 function renderThreadsTd(count: number, theme: ThemeConfig): string {
-  if (theme.threadBadgeFn) {
-    return `<td class="threads-cell">${theme.threadBadgeFn(count)}</td>`
-  }
+  if (theme.threadBadgeFn) return `<td class="threads-cell">${theme.threadBadgeFn(count)}</td>`
   return `<td class="threads-cell">${count}</td>`
+}
+
+function ciStatusHtml(state: string | null): string {
+  if (state === 'SUCCESS') return '<span class="ci-pass">pass</span>'
+  if (state === 'FAILURE') return '<span class="ci-fail">fail</span>'
+  if (state === 'PENDING') return '<span class="ci-pending">pending</span>'
+  return '<span class="ci-unknown">—</span>'
+}
+
+export interface RenderColumnOpts {
+  showThreads?: boolean
+  showCI?: boolean
+  showAuthor?: boolean // default true
 }
 
 export function renderSection(
   container: HTMLElement,
   prs: ClassifiedPR[],
-  showThreads: boolean,
   theme: ThemeConfig,
+  opts: RenderColumnOpts = {},
 ): void {
+  const { showThreads = false, showCI = false, showAuthor = true } = opts
   container.innerHTML = ''
 
   if (prs.length === 0) {
@@ -73,42 +75,35 @@ export function renderSection(
     repoHeader.textContent = repo
     container.appendChild(repoHeader)
 
+    const thCells = [`<th>${escapeHtml(theme.colPR)}</th>`, '<th></th>', `<th>${escapeHtml(theme.colTitle)}</th>`]
+    if (showThreads) thCells.push(`<th>${escapeHtml(theme.colThreads)}</th>`)
+    if (showCI) thCells.push(`<th>${escapeHtml(theme.colCI)}</th>`)
+    if (showAuthor) thCells.push(`<th>${escapeHtml(theme.colAuthor)}</th>`)
+    thCells.push(`<th>${escapeHtml(theme.colOpen)}</th>`)
+
     const table = document.createElement('table')
-    table.innerHTML = showThreads
-      ? `<thead><tr>
-           <th>${escapeHtml(theme.colPR)}</th><th></th><th>${escapeHtml(theme.colTitle)}</th><th>${escapeHtml(theme.colThreads)}</th><th>${escapeHtml(theme.colAuthor)}</th><th>${escapeHtml(theme.colOpen)}</th>
-         </tr></thead>`
-      : `<thead><tr>
-           <th>${escapeHtml(theme.colPR)}</th><th></th><th>${escapeHtml(theme.colTitle)}</th><th>${escapeHtml(theme.colAuthor)}</th><th>${escapeHtml(theme.colOpen)}</th>
-         </tr></thead>`
+    table.innerHTML = `<thead><tr>${thCells.join('')}</tr></thead>`
 
     const tbody = document.createElement('tbody')
     for (const pr of repoPRs) {
       const { type, rest } = extractType(pr.title)
-      const typeTd = renderTypeTd(type, theme)
+      const cells = [
+        `<td><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number}</a></td>`,
+        renderTypeTd(type, theme),
+        `<td class="title-cell">${escapeHtml(rest)}</td>`,
+      ]
+      if (showThreads) cells.push(renderThreadsTd(pr.unresolvedThreads, theme))
+      if (showCI) cells.push(`<td class="ci-cell">${ciStatusHtml(pr.ciState)}</td>`)
+      if (showAuthor) cells.push(`<td>${escapeHtml(pr.author)}</td>`)
+      cells.push(`<td class="days-cell">${pr.daysOpen}</td>`)
+
       const row = document.createElement('tr')
-      row.innerHTML = showThreads
-        ? `<td><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number}</a></td>
-           ${typeTd}
-           <td class="title-cell">${escapeHtml(rest)}</td>
-           ${renderThreadsTd(pr.unresolvedThreads, theme)}
-           <td>${escapeHtml(pr.author)}</td>
-           <td class="days-cell">${pr.daysOpen}</td>`
-        : `<td><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number}</a></td>
-           ${typeTd}
-           <td class="title-cell">${escapeHtml(rest)}</td>
-           <td>${escapeHtml(pr.author)}</td>
-           <td class="days-cell">${pr.daysOpen}</td>`
+      row.innerHTML = cells.join('')
       tbody.appendChild(row)
     }
     table.appendChild(tbody)
     container.appendChild(table)
   }
-}
-
-export function renderSectionHeading(el: HTMLElement, text: string): void {
-  const h2 = el.querySelector('h2')
-  if (h2) h2.textContent = text
 }
 
 export function renderSummary(container: HTMLElement, text: string): void {

@@ -15,6 +15,7 @@ export interface PRDetail {
   number: number
   ciState: string | null
   unresolvedThreads: number
+  reviewDecision: string | null
   timelineEvents: TimelineEvent[]
 }
 
@@ -37,6 +38,7 @@ interface RawPRDetail {
       }
     }>
   }
+  reviewDecision: string | null
   reviewThreads: {
     nodes: Array<{ isResolved: boolean }>
   }
@@ -53,8 +55,8 @@ function headers(token: string): Record<string, string> {
   }
 }
 
-export async function searchReviewRequested(token: string): Promise<SearchPR[]> {
-  const q = encodeURIComponent('is:pr is:open review-requested:@me')
+async function searchPRs(token: string, query: string): Promise<SearchPR[]> {
+  const q = encodeURIComponent(query)
   const response = await fetch(
     `${SEARCH_API}?q=${q}&per_page=100&sort=created&order=desc`,
     { headers: headers(token) },
@@ -79,10 +81,19 @@ export async function searchReviewRequested(token: string): Promise<SearchPR[]> 
   })
 }
 
+export function searchReviewRequested(token: string): Promise<SearchPR[]> {
+  return searchPRs(token, 'is:pr is:open review-requested:@me')
+}
+
+export function searchAuthored(token: string): Promise<SearchPR[]> {
+  return searchPRs(token, 'is:pr is:open author:@me')
+}
+
 function buildPRFragment(number: number): string {
   return `
     pr${number}: pullRequest(number: ${number}) {
       number
+      reviewDecision
       ciStatus: commits(last: 1) {
         nodes {
           commit {
@@ -136,7 +147,6 @@ export async function fetchPRDetails(
     const pr = repoData[`pr${num}`]
     const commitNode = pr.ciStatus.nodes[0]
     const ciState = commitNode?.commit?.statusCheckRollup?.state ?? null
-
     const unresolvedThreads = pr.reviewThreads.nodes.filter((t) => !t.isResolved).length
 
     const timelineEvents: TimelineEvent[] = pr.timelineItems.nodes.map((n) => ({
@@ -144,6 +154,6 @@ export async function fetchPRDetails(
       createdAt: n.createdAt,
     }))
 
-    return { number: num, ciState, unresolvedThreads, timelineEvents }
+    return { number: num, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision, timelineEvents }
   })
 }

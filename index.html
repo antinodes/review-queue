@@ -42,29 +42,44 @@
       <div id="error" class="error hidden"></div>
 
       <main id="content" class="hidden">
-        <section id="ready-section">
-          <div class="section-header">
-            <h2>Ready for Review</h2>
-            <div class="controls">
-              <div id="theme-picker" class="theme-picker"></div>
-              <span id="last-updated"></span>
-              <button id="refresh-btn" title="Refresh now">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 3a5 5 0 0 0-4.546 2.914.5.5 0 0 1-.908-.418A6 6 0 1 1 2 8a.5.5 0 0 1 1 0 5 5 0 1 0 5-5z"/>
-                  <path d="M8 1a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H5a.5.5 0 0 1 0-1h2.5V1.5A.5.5 0 0 1 8 1z"/>
-                </svg>
-              </button>
-            </div>
+        <div class="toolbar">
+          <nav id="tab-bar" class="tab-bar"></nav>
+          <div class="controls">
+            <div id="theme-picker" class="theme-picker"></div>
+            <span id="last-updated"></span>
+            <button id="refresh-btn" title="Refresh now">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 3a5 5 0 0 0-4.546 2.914.5.5 0 0 1-.908-.418A6 6 0 1 1 2 8a.5.5 0 0 1 1 0 5 5 0 1 0 5-5z"/>
+                <path d="M8 1a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H5a.5.5 0 0 1 0-1h2.5V1.5A.5.5 0 0 1 8 1z"/>
+              </svg>
+            </button>
           </div>
-          <div id="ready-list"></div>
-        </section>
+        </div>
 
-        <section id="blocked-section">
-          <h2>Blocked by Comments</h2>
-          <div id="blocked-list"></div>
-        </section>
+        <!-- Reviews tab -->
+        <div id="tab-reviews" class="tab-content">
+          <section><h2 id="reviews-ready-h"></h2><div id="reviews-ready"></div></section>
+          <section><h2 id="reviews-blocked-h"></h2><div id="reviews-blocked"></div></section>
+          <footer id="reviews-summary"></footer>
+        </div>
 
-        <footer id="summary"></footer>
+        <!-- My PRs tab -->
+        <div id="tab-myPRs" class="tab-content hidden">
+          <section><h2 id="my-ready-h"></h2><div id="my-ready"></div></section>
+          <section><h2 id="my-needsReview-h"></h2><div id="my-needsReview"></div></section>
+          <section><h2 id="my-blocked-h"></h2><div id="my-blocked"></div></section>
+          <section><h2 id="my-failing-h"></h2><div id="my-failing"></div></section>
+          <section><h2 id="my-draft-h"></h2><div id="my-draft"></div></section>
+          <footer id="my-summary"></footer>
+        </div>
+
+        <!-- Dependabot tab -->
+        <div id="tab-dependabot" class="tab-content hidden">
+          <section><h2 id="dep-ready-h"></h2><div id="dep-ready"></div></section>
+          <section><h2 id="dep-blocked-h"></h2><div id="dep-blocked"></div></section>
+          <section><h2 id="dep-failing-h"></h2><div id="dep-failing"></div></section>
+          <footer id="dep-summary"></footer>
+        </div>
       </main>
     </div>
     <script type="module" src="/src/main.ts"></script>

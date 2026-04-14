@@ -1,103 +1,133 @@
+export interface TabLabels {
+  reviews: string
+  myPRs: string
+  dependabot: string
+}
+
+export interface SectionLabels {
+  // Reviews tab
+  ready: string
+  blocked: string
+  // My PRs tab
+  readyToMerge: string
+  needsReview: string
+  myBlocked: string
+  failingCI: string
+  draft: string
+  // Dependabot tab
+  depReady: string
+  depBlocked: string
+  depFailing: string
+}
+
 export interface ThemeConfig {
   id: string
   label: string
-  sectionReady: string
-  sectionBlocked: string
+  tabs: TabLabels
+  sections: SectionLabels
   colPR: string
   colTitle: string
   colAuthor: string
   colOpen: string
   colThreads: string
-  summaryFn: (ready: number, blocked: number, skipped: number) => string
+  colCI: string
   typeLabels: Record<string, string>
   typeIconMode: 'badge' | 'rpg-awesome'
   threadBadgeFn?: (count: number) => string
 }
 
-const defaultSummary = (ready: number, blocked: number, skipped: number) =>
-  `${ready} ready for review, ${blocked} blocked by comments, ${skipped} skipped (CI pending/failing/draft)`
+const defaultTabs: TabLabels = { reviews: 'Reviews', myPRs: 'My PRs', dependabot: 'Dependabot' }
+
+const defaultSections: SectionLabels = {
+  ready: 'Ready for Review',
+  blocked: 'Blocked by Comments',
+  readyToMerge: 'Ready to Merge',
+  needsReview: 'Needs Review',
+  myBlocked: 'Blocked by Comments',
+  failingCI: 'Failing CI',
+  draft: 'Draft',
+  depReady: 'Ready for Review',
+  depBlocked: 'Blocked by Comments',
+  depFailing: 'Failing CI',
+}
 
 const defaultTypeLabels: Record<string, string> = {
-  feat: 'feat',
-  fix: 'fix',
-  build: 'build',
-  chore: 'chore',
-  refactor: 'refactor',
-  test: 'test',
-  docs: 'docs',
-  ci: 'ci',
-  perf: 'perf',
-  style: 'style',
-  revert: 'revert',
+  feat: 'feat', fix: 'fix', build: 'build', chore: 'chore',
+  refactor: 'refactor', test: 'test', docs: 'docs', ci: 'ci',
+  perf: 'perf', style: 'style', revert: 'revert',
+}
+
+const defaultCols = {
+  colPR: 'PR', colTitle: 'Title', colAuthor: 'Author',
+  colOpen: 'Open', colThreads: 'Threads', colCI: 'CI',
 }
 
 export const themes: Record<string, ThemeConfig> = {
   brutalist: {
     id: 'brutalist',
     label: 'Brutalist',
-    sectionReady: 'READY FOR REVIEW',
-    sectionBlocked: 'BLOCKED BY COMMENTS',
-    colPR: 'PR',
-    colTitle: 'Title',
-    colAuthor: 'Author',
-    colOpen: 'Open',
-    colThreads: 'Threads',
-    summaryFn: defaultSummary,
+    tabs: { reviews: 'REVIEWS', myPRs: 'MY PRS', dependabot: 'DEPENDABOT' },
+    sections: {
+      ...defaultSections,
+      ready: 'READY FOR REVIEW',
+      blocked: 'BLOCKED BY COMMENTS',
+      readyToMerge: 'READY TO MERGE',
+      needsReview: 'NEEDS REVIEW',
+      myBlocked: 'BLOCKED BY COMMENTS',
+      failingCI: 'FAILING CI',
+      draft: 'DRAFT',
+      depReady: 'READY FOR REVIEW',
+      depBlocked: 'BLOCKED BY COMMENTS',
+      depFailing: 'FAILING CI',
+    },
+    ...defaultCols,
     typeLabels: defaultTypeLabels,
     typeIconMode: 'badge',
   },
   dense: {
     id: 'dense',
     label: 'Dense',
-    sectionReady: 'Ready for Review',
-    sectionBlocked: 'Blocked by Comments',
-    colPR: 'PR',
-    colTitle: 'Title',
-    colAuthor: 'Author',
-    colOpen: 'Open',
-    colThreads: 'Threads',
-    summaryFn: defaultSummary,
+    tabs: defaultTabs,
+    sections: defaultSections,
+    ...defaultCols,
     typeLabels: defaultTypeLabels,
     typeIconMode: 'badge',
   },
   newspaper: {
     id: 'newspaper',
     label: 'Newspaper',
-    sectionReady: 'Ready for Review',
-    sectionBlocked: 'Blocked by Comments',
-    colPR: 'PR',
-    colTitle: 'Title',
-    colAuthor: 'Author',
-    colOpen: 'Open',
-    colThreads: 'Threads',
-    summaryFn: defaultSummary,
+    tabs: defaultTabs,
+    sections: defaultSections,
+    ...defaultCols,
     typeLabels: defaultTypeLabels,
     typeIconMode: 'badge',
   },
   rpg: {
     id: 'rpg',
     label: 'RPG',
-    sectionReady: 'Quests Awaiting Champions',
-    sectionBlocked: 'Contested Quests — Disputes Unresolved',
+    tabs: { reviews: 'Quest Board', myPRs: 'My Campaigns', dependabot: 'Golem Work' },
+    sections: {
+      ready: 'Quests Awaiting Champions',
+      blocked: 'Contested Quests — Disputes Unresolved',
+      readyToMerge: 'Victories Awaiting Claim',
+      needsReview: 'Campaigns Seeking Allies',
+      myBlocked: 'Campaigns Under Dispute',
+      failingCI: 'Failed Trials',
+      draft: 'Scrolls in Progress',
+      depReady: 'Golem Tasks Ready',
+      depBlocked: 'Golem Tasks Disputed',
+      depFailing: 'Golem Tasks Failed',
+    },
     colPR: 'Missive',
     colTitle: 'Quest Scroll',
     colAuthor: 'Petitioner',
     colOpen: 'Aged',
     colThreads: 'Hazard',
-    summaryFn: (ready, blocked, skipped) =>
-      `${ready} quests ripe for the taking · ${blocked} bound by dispute · ${skipped} passed over`,
+    colCI: 'Trial',
     typeLabels: {
-      feat: 'Venture',
-      fix: 'Mend',
-      build: 'Forge',
-      chore: 'Forge',
-      refactor: 'Reshape',
-      test: 'Trial',
-      docs: 'Lore',
-      ci: 'Forge',
-      perf: 'Haste',
-      style: 'Polish',
-      revert: 'Undo',
+      feat: 'Venture', fix: 'Mend', build: 'Forge', chore: 'Forge',
+      refactor: 'Reshape', test: 'Trial', docs: 'Lore', ci: 'Forge',
+      perf: 'Haste', style: 'Polish', revert: 'Undo',
     },
     typeIconMode: 'rpg-awesome',
     threadBadgeFn: (count) => {
