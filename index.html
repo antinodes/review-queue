@@ -18,12 +18,12 @@
     <div id="progress-bar"></div>
     <div id="app">
       <div id="token-prompt" class="token-prompt hidden">
-        <p>Enter a GitHub personal access token with <code>repo</code> scope:</p>
+        <p>Paste a GitHub personal access token with <code>repo</code> scope:</p>
         <form id="token-form">
           <input type="password" id="token-input" placeholder="ghp_..." autocomplete="off" />
           <button type="submit">Save</button>
         </form>
-        <p class="hint">Token is stored in localStorage on this device only.</p>
+        <p class="hint"><a id="create-token-link" href="#" target="_blank" rel="noopener">Create a token</a> — stored in localStorage on this device only.</p>
       </div>
 
       <div id="loading" class="loading hidden">
