@@ -155,8 +155,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const tokenInput = $('token-input') as HTMLInputElement
   const refreshBtn = $('refresh-btn')
   const createTokenLink = $('create-token-link') as HTMLAnchorElement
+  const tokenInfoBtn = $('token-info-btn')
+  const tokenInfo = $('token-info')
 
   createTokenLink.href = 'https://github.com/settings/tokens/new?scopes=repo&description=Review+Queue'
+  tokenInfoBtn.addEventListener('click', () => tokenInfo.classList.toggle('hidden'))
 
   tokenForm.addEventListener('submit', (e) => {
     e.preventDefault()

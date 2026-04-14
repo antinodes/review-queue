@@ -18,12 +18,20 @@
     <div id="progress-bar"></div>
     <div id="app">
       <div id="token-prompt" class="token-prompt hidden">
-        <p>Paste a GitHub personal access token with <code>repo</code> scope:</p>
+        <div class="token-header">
+          <p>Paste a GitHub personal access token with <code>repo</code> scope:</p>
+          <button id="token-info-btn" class="info-btn" type="button" title="Why do I need this?">?</button>
+        </div>
+        <div id="token-info" class="token-info hidden">
+          <p>This app calls the GitHub API to fetch your PR review queue. The token never leaves your browser — it's stored in localStorage and sent directly to <code>api.github.com</code>.</p>
+          <p><strong>Option 1:</strong> <a id="create-token-link" href="#" target="_blank" rel="noopener">Create a personal access token</a> with <code>repo</code> scope. Fine-grained tokens let you restrict to specific repos.</p>
+          <p><strong>Option 2:</strong> If you use the GitHub CLI, run <code>gh auth token</code> and paste the output. This token may rotate when you re-authenticate.</p>
+        </div>
         <form id="token-form">
           <input type="password" id="token-input" placeholder="ghp_..." autocomplete="off" />
           <button type="submit">Save</button>
         </form>
-        <p class="hint"><a id="create-token-link" href="#" target="_blank" rel="noopener">Create a token</a> — stored in localStorage on this device only.</p>
+        <p class="hint">Stored in localStorage on this device only.</p>
       </div>
 
       <div id="loading" class="loading hidden">

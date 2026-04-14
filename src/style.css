@@ -68,8 +68,30 @@ body {
 .token-prompt p { margin-bottom: 12px; font-size: 14px; }
 .token-prompt code { background: var(--bg); padding: 2px 6px; border-radius: 3px; font-size: 13px; }
 .token-prompt .hint { color: var(--text-muted); font-size: 12px; margin-bottom: 0; }
-.token-prompt .hint a { color: var(--link); text-decoration: underline; }
-.token-prompt .hint a:hover { color: var(--text); }
+.token-prompt a { color: var(--link); text-decoration: underline; }
+.token-prompt a:hover { color: var(--text); }
+
+.token-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.token-header p { flex: 1; }
+
+.info-btn {
+  width: 22px; height: 22px; flex-shrink: 0;
+  border-radius: 50%; border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted);
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: color 0.15s, border-color 0.15s;
+}
+.info-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
+.token-info {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px;
+  margin-bottom: 12px; font-size: 13px; line-height: 1.6;
+}
+.token-info p { margin-bottom: 8px; }
+.token-info p:last-child { margin-bottom: 0; }
+.token-info code { background: var(--surface); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 
 #token-form { display: flex; gap: 8px; margin-bottom: 12px; }
 #token-input {
