@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Review Queue</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg:           #080808;
+      --bg-panel:     #0d0d0d;
+      --bg-row-alt:   #111111;
+      --bg-group:     #0a0f0a;
+      --amber:        #ffaa00;
+      --amber-dim:    #cc8800;
+      --amber-muted:  #7a5200;
+      --green:        #00cc66;
+      --green-dim:    #009944;
+      --green-muted:  #004422;
+      --orange:       #ff6600;
+      --orange-dim:   #cc4400;
+      --red:          #ff3333;
+      --cyan:         #00cccc;
+      --cyan-dim:     #008888;
+      --white:        #e8e0d0;
+      --white-dim:    #998f7e;
+      --white-muted:  #4a443a;
+      --border:       #2a2a2a;
+      --border-bright:#3a3a2a;
+      --scanline:     rgba(0,0,0,0.18);
+      --font:         'IBM Plex Mono', 'Courier New', Courier, monospace;
+    }
+
+    html {
+      background: var(--bg);
+      color: var(--white);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    body {
+      background: var(--bg);
+      min-height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* CRT scanline overlay */
+    body::before {
+      content: '';
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        var(--scanline) 2px,
+        var(--scanline) 4px
+      );
+      mix-blend-mode: multiply;
+    }
+
+    /* Subtle vignette */
+    body::after {
+      content: '';
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9998;
+      background: radial-gradient(
+        ellipse at center,
+        transparent 60%,
+        rgba(0,0,0,0.55) 100%
+      );
+    }
+
+    .wrapper {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 0 40px 0;
+    }
+
+    /* ─── TOP STATUS BAR ────────────────────────────────────── */
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      background: #0b0b0b;
+      padding: 0;
+      font-size: 11px;
+    }
+
+    .status-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 16px 6px 14px;
+      border-right: 1px solid var(--border);
+      color: var(--white-dim);
+      letter-spacing: 0.04em;
+    }
+
+    .status-chip .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot-green   { background: var(--green);  box-shadow: 0 0 6px var(--green); }
+    .dot-amber   { background: var(--amber);  box-shadow: 0 0 6px var(--amber); }
+    .dot-red     { background: var(--red);    box-shadow: 0 0 5px var(--red);   }
+    .dot-muted   { background: var(--white-muted); }
+
+    .status-chip .val {
+      font-weight: 700;
+      color: var(--white);
+    }
+
+    .status-spacer { flex: 1; }
+
+    .status-chip-right {
+      padding: 6px 14px 6px 16px;
+      border-left: 1px solid var(--border);
+      border-right: none;
+      color: var(--white-dim);
+      font-size: 10px;
+      letter-spacing: 0.06em;
+    }
+
+    /* ─── SECTION ───────────────────────────────────────────── */
+
+    .section {
+      margin-top: 20px;
+      border: 1px solid var(--border-bright);
+      background: var(--bg-panel);
+      position: relative;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px 8px 0;
+      border-bottom: 1px solid var(--border-bright);
+      background: #0e0e0e;
+    }
+
+    .section-title-block {
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+
+    .section-bracket {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--amber);
+      padding: 0 8px;
+      line-height: 1;
+      opacity: 0.5;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--amber);
+    }
+
+    .section-count {
+      font-size: 10px;
+      color: var(--white-muted);
+      margin-left: 10px;
+      letter-spacing: 0.06em;
+    }
+
+    .section-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .updated-text {
+      font-size: 10px;
+      color: var(--white-muted);
+      letter-spacing: 0.05em;
+    }
+
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border: 1px solid var(--amber-muted);
+      background: transparent;
+      color: var(--amber-dim);
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      transition: border-color 0.1s, color 0.1s, background 0.1s;
+      padding: 0;
+      font-family: var(--font);
+    }
+
+    .refresh-btn:hover {
+      border-color: var(--amber);
+      color: var(--amber);
+      background: rgba(255,170,0,0.07);
+    }
+
+    /* ─── TABLE ─────────────────────────────────────────────── */
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    thead tr {
+      background: #0a0a0a;
+    }
+
+    thead th {
+      padding: 5px 10px;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--white-muted);
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    thead th:first-child {
+      padding-left: 14px;
+    }
+
+    thead th:last-child {
+      padding-right: 14px;
+      text-align: right;
+    }
+
+    /* ─── REPO GROUP HEADER ─────────────────────────────────── */
+
+    .repo-group-row td {
+      padding: 0;
+    }
+
+    .repo-group-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      background: var(--bg-group);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--green-dim);
+    }
+
+    .repo-group-label::before {
+      content: '▶';
+      font-size: 7px;
+      color: var(--green-muted);
+    }
+
+    .repo-group-label .repo-slash {
+      color: var(--white-muted);
+    }
+
+    .repo-group-label .repo-org {
+      color: var(--white-muted);
+    }
+
+    .repo-group-label .repo-name {
+      color: var(--green);
+    }
+
+    /* ─── DATA ROWS ─────────────────────────────────────────── */
+
+    tbody tr.data-row {
+      border-bottom: 1px solid #161616;
+      transition: background 0.08s;
+    }
+
+    tbody tr.data-row:hover {
+      background: #161410;
+    }
+
+    tbody tr.data-row td {
+      padding: 6px 10px;
+      vertical-align: middle;
+      color: var(--white-dim);
+    }
+
+    tbody tr.data-row td:first-child {
+      padding-left: 28px;
+    }
+
+    tbody tr.data-row td:last-child {
+      padding-right: 14px;
+      text-align: right;
+    }
+
+    /* ─── PR LINK ───────────────────────────────────────────── */
+
+    .pr-link {
+      color: var(--cyan);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+      text-shadow: 0 0 8px rgba(0,204,204,0.3);
+      transition: color 0.1s, text-shadow 0.1s;
+    }
+
+    .pr-link:hover {
+      color: #33ffff;
+      text-shadow: 0 0 12px rgba(0,255,255,0.5);
+    }
+
+    /* ─── TITLE CELL ────────────────────────────────────────── */
+
+    .title-cell {
+      max-width: 280px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: var(--white);
+      font-size: 12px;
+    }
+
+    .feat-tag {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      padding: 1px 4px;
+      border-radius: 0;
+      vertical-align: middle;
+      text-transform: uppercase;
+      display: inline-block;
+    }
+
+    .tag-feat  { background: rgba(0,100,200,0.35); color: #66aaff; border: 1px solid #224488; }
+    .tag-fix   { background: rgba(200,60,0,0.35);  color: #ff8844; border: 1px solid #883322; }
+    .tag-build { background: rgba(80,60,0,0.35);   color: #ccaa33; border: 1px solid #554400; }
+
+    /* ─── TYPE COLUMN ───────────────────────────────────────────── */
+
+    .type-col {
+      width: 58px;
+      white-space: nowrap;
+      text-align: left;
+    }
+
+    /* ─── AUTHOR ────────────────────────────────────────────── */
+
+    .author-cell {
+      font-size: 11px;
+      color: var(--white-dim);
+      white-space: nowrap;
+    }
+
+    .author-bot {
+      color: var(--amber-muted);
+      font-style: italic;
+    }
+
+    /* ─── AGE ───────────────────────────────────────────────── */
+
+    .age-cell {
+      font-size: 11px;
+      white-space: nowrap;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .age-fresh  { color: var(--green); }
+    .age-mid    { color: var(--amber); }
+    .age-stale  { color: var(--orange); }
+    .age-old    { color: var(--red); }
+
+    /* ─── THREADS BADGE ─────────────────────────────────────── */
+
+    .threads-cell {
+      text-align: right;
+    }
+
+    .thread-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--orange);
+      letter-spacing: 0.04em;
+      padding: 2px 7px;
+      border: 1px solid var(--orange-dim);
+      background: rgba(255,80,0,0.08);
+    }
+
+    .thread-badge .badge-icon {
+      font-size: 9px;
+      opacity: 0.7;
+    }
+
+    .thread-badge.badge-high {
+      color: var(--red);
+      border-color: var(--red);
+      background: rgba(255,50,50,0.1);
+      box-shadow: 0 0 6px rgba(255,50,50,0.15);
+    }
+
+    /* ─── FOOTER ────────────────────────────────────────────── */
+
+    .footer {
+      margin-top: 20px;
+      border: 1px solid var(--border);
+      background: #0b0b0b;
+      padding: 9px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .footer-summary {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 11px;
+      flex-wrap: wrap;
+    }
+
+    .footer-stat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .footer-stat .fs-val {
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .fs-ready   { color: var(--green); }
+    .fs-blocked { color: var(--orange); }
+    .fs-skipped { color: var(--white-muted); }
+
+    .footer-stat .fs-label {
+      color: var(--white-muted);
+      letter-spacing: 0.04em;
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+
+    .footer-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+    }
+
+    .footer-build {
+      font-size: 9px;
+      color: var(--white-muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      text-align: right;
+    }
+
+    /* ─── TICKER STRIP ──────────────────────────────────────── */
+
+    .ticker {
+      border-top: 1px solid var(--amber-muted);
+      border-bottom: 1px solid var(--border);
+      background: #0b0900;
+      padding: 4px 0;
+      overflow: hidden;
+      position: relative;
+      margin-top: 0;
+    }
+
+    .ticker-inner {
+      display: flex;
+      gap: 40px;
+      animation: ticker-scroll 30s linear infinite;
+      white-space: nowrap;
+      width: max-content;
+    }
+
+    .ticker-item {
+      font-size: 10px;
+      color: var(--amber-dim);
+      letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ticker-item .t-sep { color: var(--amber-muted); }
+    .ticker-item .t-up  { color: var(--green); }
+    .ticker-item .t-dn  { color: var(--red); }
+
+    @keyframes ticker-scroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    /* ─── CORNER ORNAMENTS ──────────────────────────────────── */
+
+    .section::before {
+      content: '┌';
+      position: absolute;
+      top: -1px;
+      left: -1px;
+      color: var(--amber-dim);
+      font-size: 14px;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .section::after {
+      content: '┘';
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      color: var(--amber-dim);
+      font-size: 14px;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    /* ─── BLOCKED SECTION ACCENT ────────────────────────────── */
+
+    .section-blocked {
+      border-color: rgba(255,80,0,0.3);
+    }
+
+    .section-blocked .section-header {
+      border-bottom-color: rgba(255,80,0,0.3);
+    }
+
+    .section-blocked .section-label {
+      color: var(--orange);
+    }
+
+    .section-blocked .section-bracket {
+      color: var(--orange);
+    }
+
+    .section-blocked::before,
+    .section-blocked::after {
+      color: var(--orange-dim);
+    }
+
+    /* ─── NO DATA ───────────────────────────────────────────── */
+
+    .empty-row td {
+      padding: 16px 14px;
+      color: var(--white-muted);
+      font-size: 11px;
+      text-align: center;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+
+    <!-- TICKER -->
+    <div class="ticker">
+      <div class="ticker-inner">
+        <span class="ticker-item">READY&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-up">6</span>&nbsp;PRS</span>
+        <span class="ticker-item">BLOCKED&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-dn">5</span>&nbsp;PRS</span>
+        <span class="ticker-item">SKIPPED&nbsp;<span class="t-sep">|</span>&nbsp;5&nbsp;PRS</span>
+        <span class="ticker-item">SEERIST/EOS&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-up">7</span>&nbsp;OPEN</span>
+        <span class="ticker-item">SEERIST/SCRY&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-up">4</span>&nbsp;OPEN</span>
+        <span class="ticker-item">OLDEST&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-dn">14D</span>&nbsp;STALE</span>
+        <span class="ticker-item">THREADS&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-dn">19</span>&nbsp;UNRESOLVED</span>
+        <!-- duplicate for seamless loop -->
+        <span class="ticker-item">READY&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-up">6</span>&nbsp;PRS</span>
+        <span class="ticker-item">BLOCKED&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-dn">5</span>&nbsp;PRS</span>
+        <span class="ticker-item">SKIPPED&nbsp;<span class="t-sep">|</span>&nbsp;5&nbsp;PRS</span>
+        <span class="ticker-item">SEERIST/EOS&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-up">7</span>&nbsp;OPEN</span>
+        <span class="ticker-item">SEERIST/SCRY&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-up">4</span>&nbsp;OPEN</span>
+        <span class="ticker-item">OLDEST&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-dn">14D</span>&nbsp;STALE</span>
+        <span class="ticker-item">THREADS&nbsp;<span class="t-sep">|</span>&nbsp;<span class="t-dn">19</span>&nbsp;UNRESOLVED</span>
+      </div>
+    </div>
+
+    <!-- STATUS BAR -->
+    <div class="status-bar">
+      <div class="status-chip">
+        <span class="dot dot-green"></span>
+        <span>CI PASSING</span>
+      </div>
+      <div class="status-chip">
+        <span class="dot dot-amber"></span>
+        <span>THREADS <span class="val">19</span></span>
+      </div>
+      <div class="status-chip">
+        <span class="dot dot-muted"></span>
+        <span>DRAFT / PENDING <span class="val">5</span></span>
+      </div>
+      <div class="status-spacer"></div>
+      <div class="status-chip status-chip-right">REPOS: 2 ACTIVE</div>
+    </div>
+
+    <!-- SECTION 1: READY FOR REVIEW -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title-block">
+          <span class="section-bracket">[</span>
+          <span class="section-label">Ready for Review</span>
+          <span class="section-bracket">]</span>
+          <span class="section-count">CI PASSING &middot; NO UNRESOLVED THREADS &middot; 6 PRS</span>
+        </div>
+        <div class="section-controls">
+          <span class="updated-text">Updated 12:37 PM</span>
+          <button class="refresh-btn" title="Refresh">&#8635;</button>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>PR</th>
+            <th></th>
+            <th>Title</th>
+            <th>Author</th>
+            <th>Open</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <!-- REPO: Seerist/eos -->
+          <tr class="repo-group-row">
+            <td colspan="5">
+              <div class="repo-group-label">
+                <span class="repo-org">Seerist</span><span class="repo-slash">/</span><span class="repo-name">eos</span>
+              </div>
+            </td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#42</a></td>
+            <td class="type-col"><span class="feat-tag tag-feat">feat</span></td>
+            <td class="title-cell">AAAS-10676 copy content to clipboard</td>
+            <td class="author-cell">lstates7</td>
+            <td class="age-cell age-mid">5d</td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#50</a></td>
+            <td class="type-col"><span class="feat-tag tag-feat">feat</span></td>
+            <td class="title-cell">AAAS-10700 &mdash; widget bulk actions</td>
+            <td class="author-cell">sureja-payalben</td>
+            <td class="age-cell age-mid">4d</td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#69</a></td>
+            <td class="type-col"><span class="feat-tag tag-fix">fix</span></td>
+            <td class="title-cell">broadcast elevated filters to TabbedSea&hellip;</td>
+            <td class="author-cell">alexander-thorwaldson</td>
+            <td class="age-cell age-fresh">&lt;1d</td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#68</a></td>
+            <td class="type-col"><span class="feat-tag tag-feat">feat</span></td>
+            <td class="title-cell">enable overlay filters on search widget&hellip;</td>
+            <td class="author-cell">alexander-thorwaldson</td>
+            <td class="age-cell age-fresh">&lt;1d</td>
+          </tr>
+
+          <!-- REPO: Seerist/scry -->
+          <tr class="repo-group-row">
+            <td colspan="5">
+              <div class="repo-group-label">
+                <span class="repo-org">Seerist</span><span class="repo-slash">/</span><span class="repo-name">scry</span>
+              </div>
+            </td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#13</a></td>
+            <td class="type-col"><span class="feat-tag tag-build">build</span></td>
+            <td class="title-cell">Bump tsx from 4.20.4 to 4.21.0</td>
+            <td class="author-cell author-bot">dependabot[bot]</td>
+            <td class="age-cell age-old">14d</td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#90</a></td>
+            <td class="type-col"><span class="feat-tag tag-build">build</span></td>
+            <td class="title-cell">Bump @opensearch-project/opensearch from&hellip;</td>
+            <td class="author-cell author-bot">dependabot[bot]</td>
+            <td class="age-cell age-fresh">2d</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <!-- SECTION 2: BLOCKED BY COMMENTS -->
+    <div class="section section-blocked">
+      <div class="section-header">
+        <div class="section-title-block">
+          <span class="section-bracket">[</span>
+          <span class="section-label">Blocked by Comments</span>
+          <span class="section-bracket">]</span>
+          <span class="section-count">CI PASSING &middot; HAS UNRESOLVED THREADS &middot; 5 PRS</span>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>PR</th>
+            <th></th>
+            <th>Title</th>
+            <th>Threads</th>
+            <th>Author</th>
+            <th>Open</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <!-- REPO: Seerist/eos -->
+          <tr class="repo-group-row">
+            <td colspan="6">
+              <div class="repo-group-label">
+                <span class="repo-org">Seerist</span><span class="repo-slash">/</span><span class="repo-name">eos</span>
+              </div>
+            </td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#72</a></td>
+            <td class="type-col"><span class="feat-tag tag-fix">fix</span></td>
+            <td class="title-cell">AAAS-10626 add asset click handler and det&hellip;</td>
+            <td class="threads-cell"><span class="thread-badge badge-high"><span class="badge-icon">&#9656;</span>4</span></td>
+            <td class="author-cell">tg-seerist</td>
+            <td class="age-cell age-fresh">&lt;1d</td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#70</a></td>
+            <td class="type-col"><span class="feat-tag tag-feat">feat</span></td>
+            <td class="title-cell">AAAS-10711 region cascading geofilter</td>
+            <td class="threads-cell"><span class="thread-badge"><span class="badge-icon">&#9656;</span>2</span></td>
+            <td class="author-cell">alexander-thorwaldson</td>
+            <td class="age-cell age-fresh">&lt;1d</td>
+          </tr>
+
+          <!-- REPO: Seerist/scry -->
+          <tr class="repo-group-row">
+            <td colspan="6">
+              <div class="repo-group-label">
+                <span class="repo-org">Seerist</span><span class="repo-slash">/</span><span class="repo-name">scry</span>
+              </div>
+            </td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#15</a></td>
+            <td class="type-col"><span class="feat-tag tag-build">build</span></td>
+            <td class="title-cell">Bump @adonisjs/core from 6.19.0 to 7.3.0</td>
+            <td class="threads-cell"><span class="thread-badge badge-high"><span class="badge-icon">&#9656;</span>8</span></td>
+            <td class="author-cell author-bot">dependabot[bot]</td>
+            <td class="age-cell age-old">14d</td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#39</a></td>
+            <td class="type-col"><span class="feat-tag tag-feat">feat</span></td>
+            <td class="title-cell">scribe top events</td>
+            <td class="threads-cell"><span class="thread-badge badge-high"><span class="badge-icon">&#9656;</span>4</span></td>
+            <td class="author-cell">rodartha</td>
+            <td class="age-cell age-stale">12d</td>
+          </tr>
+          <tr class="data-row">
+            <td><a class="pr-link" href="#">#91</a></td>
+            <td class="type-col"><span class="feat-tag tag-build">build</span></td>
+            <td class="title-cell">Bump @ai-sdk/openai from 2.0.16 to 3.0.52</td>
+            <td class="threads-cell"><span class="thread-badge"><span class="badge-icon">&#9656;</span>1</span></td>
+            <td class="author-cell author-bot">dependabot[bot]</td>
+            <td class="age-cell age-fresh">2d</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <!-- FOOTER SUMMARY -->
+    <div class="footer">
+      <div class="footer-summary">
+        <div class="footer-stat">
+          <span class="fs-val fs-ready">6</span>
+          <span class="fs-label">Ready for review</span>
+        </div>
+        <div class="footer-divider"></div>
+        <div class="footer-stat">
+          <span class="fs-val fs-blocked">5</span>
+          <span class="fs-label">Blocked by comments</span>
+        </div>
+        <div class="footer-divider"></div>
+        <div class="footer-stat">
+          <span class="fs-val fs-skipped">5</span>
+          <span class="fs-label">Skipped (CI pending/failing/draft)</span>
+        </div>
+      </div>
+      <div class="footer-build">REV-QUEUE v1.0 &nbsp;|&nbsp; 2026-04-14</div>
+    </div>
+
+  </div>
+</body>
+</html>

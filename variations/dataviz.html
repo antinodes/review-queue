@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Review Queue</title>
+  <style>
+    /* ─── Design tokens ──────────────────────────────────────────────────── */
+    :root {
+      --bg:             #09090b;
+      --surface-0:      #0f0f12;
+      --surface-1:      #18181c;
+      --surface-2:      #222228;
+      --border-subtle:  rgba(255,255,255,0.06);
+      --border-medium:  rgba(255,255,255,0.10);
+      --text-primary:   #f4f4f5;
+      --text-secondary: #a1a1aa;
+      --text-tertiary:  #52525b;
+      --accent-blue:    #3b82f6;
+      --accent-blue-dim: rgba(59,130,246,0.12);
+      --accent-green:   #22c55e;
+      --accent-green-dim: rgba(34,197,94,0.10);
+      --accent-amber:   #f59e0b;
+      --accent-amber-dim: rgba(245,158,11,0.12);
+      --accent-purple:  #a78bfa;
+      --font-sans:      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+      --radius-sm:      6px;
+      --radius-md:      10px;
+      --radius-lg:      16px;
+      --shadow-card:    0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3);
+    }
+
+    /* ─── Reset & base ───────────────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text-primary);
+      line-height: 1.5;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Grain texture overlay ──────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 128px 128px;
+    }
+
+    /* ─── Layout wrapper ─────────────────────────────────────────────────── */
+    .page {
+      position: relative;
+      z-index: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px 24px 64px;
+    }
+
+    /* ─── Stat chips row ─────────────────────────────────────────────────── */
+    .stats-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 48px;
+    }
+
+    .stat-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      letter-spacing: 0.01em;
+    }
+
+    .stat-chip .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .stat-chip .count {
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .stat-chip.green .dot  { background: var(--accent-green);  box-shadow: 0 0 6px var(--accent-green); }
+    .stat-chip.amber .dot  { background: var(--accent-amber);  box-shadow: 0 0 6px var(--accent-amber); }
+    .stat-chip.muted .dot  { background: var(--text-tertiary); }
+
+    .stat-chip.green .count { color: var(--accent-green); }
+    .stat-chip.amber .count { color: var(--accent-amber); }
+    .stat-chip.muted .count { color: var(--text-secondary); }
+
+    /* ─── Section ────────────────────────────────────────────────────────── */
+    .section {
+      margin-bottom: 40px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .section-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .section-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .section-status-dot.green {
+      background: var(--accent-green);
+      box-shadow: 0 0 8px rgba(34,197,94,0.6);
+    }
+
+    .section-status-dot.amber {
+      background: var(--accent-amber);
+      box-shadow: 0 0 8px rgba(245,158,11,0.6);
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+    }
+
+    .section-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.02em;
+    }
+
+    .section-badge.green {
+      background: var(--accent-green-dim);
+      color: var(--accent-green);
+      border: 1px solid rgba(34,197,94,0.2);
+    }
+
+    .section-badge.amber {
+      background: var(--accent-amber-dim);
+      color: var(--accent-amber);
+      border: 1px solid rgba(245,158,11,0.2);
+    }
+
+    /* ─── Controls (timestamp + refresh) ────────────────────────────────── */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .last-updated {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-tertiary);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    .refresh-btn:hover {
+      color: var(--text-primary);
+      border-color: var(--border-medium);
+      background: var(--surface-2);
+    }
+
+    /* ─── Repo group card ────────────────────────────────────────────────── */
+    .repo-group {
+      background: var(--surface-0);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      margin-bottom: 12px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .repo-group-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 20px;
+      background: var(--surface-1);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .repo-icon {
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+    }
+
+    .repo-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      letter-spacing: 0.01em;
+    }
+
+    .repo-pr-count {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-tertiary);
+    }
+
+    /* ─── Table ──────────────────────────────────────────────────────────── */
+    .pr-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .pr-table thead th {
+      padding: 9px 20px;
+      text-align: left;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-tertiary);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .pr-table thead th:last-child { text-align: right; }
+
+    .pr-table tbody tr {
+      transition: background 0.1s;
+    }
+
+    .pr-table tbody tr:not(:last-child) {
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .pr-table tbody tr:hover {
+      background: var(--surface-1);
+    }
+
+    .pr-table tbody td {
+      padding: 13px 20px;
+      vertical-align: middle;
+    }
+
+    /* PR number link */
+    .pr-link {
+      display: inline-flex;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-blue);
+      text-decoration: none;
+      background: var(--accent-blue-dim);
+      border: 1px solid rgba(59,130,246,0.2);
+      border-radius: var(--radius-sm);
+      padding: 2px 7px;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .pr-link:hover {
+      background: rgba(59,130,246,0.2);
+      border-color: rgba(59,130,246,0.4);
+    }
+
+    /* PR title */
+    .pr-title {
+      font-size: 13px;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 340px;
+    }
+
+    .pr-title.bot {
+      color: var(--text-secondary);
+    }
+
+    /* Author */
+    .author-cell {
+      white-space: nowrap;
+    }
+
+    .author-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .author-avatar {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--surface-2) 0%, #2d2d38 100%);
+      border: 1px solid var(--border-subtle);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-tertiary);
+      flex-shrink: 0;
+      text-transform: uppercase;
+      font-family: var(--font-sans);
+    }
+
+    .author-badge.bot .author-avatar {
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      color: var(--accent-purple);
+      border-color: rgba(167,139,250,0.2);
+    }
+
+    .author-badge.bot .author-name {
+      color: var(--accent-purple);
+    }
+
+    /* Age / open time */
+    .age-cell {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .age-pill {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      padding: 2px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.02em;
+    }
+
+    .age-pill.fresh {
+      background: rgba(34,197,94,0.08);
+      color: var(--accent-green);
+      border: 1px solid rgba(34,197,94,0.15);
+    }
+
+    .age-pill.recent {
+      background: rgba(59,130,246,0.08);
+      color: var(--accent-blue);
+      border: 1px solid rgba(59,130,246,0.15);
+    }
+
+    .age-pill.stale {
+      background: rgba(245,158,11,0.08);
+      color: var(--accent-amber);
+      border: 1px solid rgba(245,158,11,0.15);
+    }
+
+    .age-pill.old {
+      background: rgba(239,68,68,0.08);
+      color: #ef4444;
+      border: 1px solid rgba(239,68,68,0.15);
+    }
+
+    /* Thread count */
+    .threads-cell {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .thread-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--accent-amber-dim);
+      color: var(--accent-amber);
+      border: 1px solid rgba(245,158,11,0.2);
+    }
+
+    .thread-badge svg {
+      opacity: 0.8;
+    }
+
+    .thread-badge.high {
+      background: rgba(239,68,68,0.10);
+      color: #ef4444;
+      border-color: rgba(239,68,68,0.2);
+    }
+
+    /* ─── Divider between sections ───────────────────────────────────────── */
+    .section-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-subtle) 20%, var(--border-subtle) 80%, transparent);
+      margin: 8px 0 40px;
+    }
+
+    /* ─── Type badges ────────────────────────────────────────────────────── */
+    .type-pill {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      padding: 2px 7px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .type-feat  { background: rgba(59,130,246,0.10); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+    .type-fix   { background: rgba(245,158,11,0.10); color: var(--accent-amber); border: 1px solid rgba(245,158,11,0.2); }
+    .type-build { background: rgba(161,161,170,0.08); color: var(--text-tertiary); border: 1px solid rgba(161,161,170,0.15); }
+
+    .pr-table th.col-type, .pr-table td.col-type { width: 62px; white-space: nowrap; }
+
+    /* ─── Footer summary ─────────────────────────────────────────────────── */
+    .page-footer {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding-top: 28px;
+      border-top: 1px solid var(--border-subtle);
+      font-size: 12px;
+      color: var(--text-tertiary);
+    }
+
+    .footer-seg { white-space: nowrap; }
+
+    .footer-sep {
+      color: var(--border-medium);
+      user-select: none;
+    }
+
+    .footer-seg.green { color: var(--accent-green); font-weight: 600; }
+    .footer-seg.amber { color: var(--accent-amber); font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ── Summary stat chips ──────────────────────────────────────────────── -->
+  <div class="stats-row">
+    <div class="stat-chip green">
+      <span class="dot"></span>
+      <span class="count">6</span>
+      <span>ready for review</span>
+    </div>
+    <div class="stat-chip amber">
+      <span class="dot"></span>
+      <span class="count">5</span>
+      <span>blocked by comments</span>
+    </div>
+    <div class="stat-chip muted">
+      <span class="dot"></span>
+      <span class="count">5</span>
+      <span>skipped</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- Section 1: Ready for Review                                           -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-title-group">
+        <span class="section-status-dot green"></span>
+        <span class="section-title">Ready for Review</span>
+        <span class="section-badge green">6 PRs</span>
+      </div>
+      <div class="controls">
+        <span class="last-updated">Updated 12:37 PM</span>
+        <button class="refresh-btn" title="Refresh">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13.5 8A5.5 5.5 0 1 1 10 3.07"/>
+            <polyline points="10 1 10 4 13 4"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Repo: Seerist/eos -->
+    <div class="repo-group">
+      <div class="repo-group-header">
+        <svg class="repo-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8Z"/>
+        </svg>
+        <span class="repo-name">Seerist/eos</span>
+        <span class="repo-pr-count">4 PRs</span>
+      </div>
+      <table class="pr-table">
+        <thead>
+          <tr>
+            <th>PR</th>
+            <th class="col-type"></th>
+            <th>Title</th>
+            <th>Author</th>
+            <th style="text-align:right">Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a class="pr-link" href="#">#42</a></td>
+            <td class="col-type"><span class="type-pill type-feat">feat</span></td>
+            <td><span class="pr-title">AAAS-10676 copy content to clipboard</span></td>
+            <td class="author-cell">
+              <span class="author-badge">
+                <span class="author-avatar">ls</span>
+                <span class="author-name">lstates7</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill stale">5d</span></td>
+          </tr>
+          <tr>
+            <td><a class="pr-link" href="#">#50</a></td>
+            <td class="col-type"><span class="type-pill type-feat">feat</span></td>
+            <td><span class="pr-title">AAAS-10700 - widget bulk actions</span></td>
+            <td class="author-cell">
+              <span class="author-badge">
+                <span class="author-avatar">sp</span>
+                <span class="author-name">sureja-payalben</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill recent">4d</span></td>
+          </tr>
+          <tr>
+            <td><a class="pr-link" href="#">#69</a></td>
+            <td class="col-type"><span class="type-pill type-fix">fix</span></td>
+            <td><span class="pr-title">broadcast elevated filters to TabbedSea&hellip;</span></td>
+            <td class="author-cell">
+              <span class="author-badge">
+                <span class="author-avatar">at</span>
+                <span class="author-name">alexander-thorwaldson</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill fresh">&lt;1d</span></td>
+          </tr>
+          <tr>
+            <td><a class="pr-link" href="#">#68</a></td>
+            <td class="col-type"><span class="type-pill type-feat">feat</span></td>
+            <td><span class="pr-title">enable overlay filters on search widget&hellip;</span></td>
+            <td class="author-cell">
+              <span class="author-badge">
+                <span class="author-avatar">at</span>
+                <span class="author-name">alexander-thorwaldson</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill fresh">&lt;1d</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Repo: Seerist/scry -->
+    <div class="repo-group">
+      <div class="repo-group-header">
+        <svg class="repo-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8Z"/>
+        </svg>
+        <span class="repo-name">Seerist/scry</span>
+        <span class="repo-pr-count">2 PRs</span>
+      </div>
+      <table class="pr-table">
+        <thead>
+          <tr>
+            <th>PR</th>
+            <th class="col-type"></th>
+            <th>Title</th>
+            <th>Author</th>
+            <th style="text-align:right">Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a class="pr-link" href="#">#13</a></td>
+            <td class="col-type"><span class="type-pill type-build">build</span></td>
+            <td><span class="pr-title bot">Bump tsx from 4.20.4 to 4.21.0</span></td>
+            <td class="author-cell">
+              <span class="author-badge bot">
+                <span class="author-avatar">db</span>
+                <span class="author-name">dependabot[bot]</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill old">14d</span></td>
+          </tr>
+          <tr>
+            <td><a class="pr-link" href="#">#90</a></td>
+            <td class="col-type"><span class="type-pill type-build">build</span></td>
+            <td><span class="pr-title bot">Bump @opensearch-project/opensearch from&hellip;</span></td>
+            <td class="author-cell">
+              <span class="author-badge bot">
+                <span class="author-avatar">db</span>
+                <span class="author-name">dependabot[bot]</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill recent">2d</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="section-divider"></div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- Section 2: Blocked by Comments                                        -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <section class="section">
+    <div class="section-header">
+      <div class="section-title-group">
+        <span class="section-status-dot amber"></span>
+        <span class="section-title">Blocked by Comments</span>
+        <span class="section-badge amber">5 PRs</span>
+      </div>
+    </div>
+
+    <!-- Repo: Seerist/eos -->
+    <div class="repo-group">
+      <div class="repo-group-header">
+        <svg class="repo-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8Z"/>
+        </svg>
+        <span class="repo-name">Seerist/eos</span>
+        <span class="repo-pr-count">2 PRs</span>
+      </div>
+      <table class="pr-table">
+        <thead>
+          <tr>
+            <th>PR</th>
+            <th class="col-type"></th>
+            <th>Title</th>
+            <th style="text-align:right">Threads</th>
+            <th>Author</th>
+            <th style="text-align:right">Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a class="pr-link" href="#">#72</a></td>
+            <td class="col-type"><span class="type-pill type-fix">fix</span></td>
+            <td><span class="pr-title">AAAS-10626 add asset click handler and det&hellip;</span></td>
+            <td class="threads-cell">
+              <span class="thread-badge">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                4
+              </span>
+            </td>
+            <td class="author-cell">
+              <span class="author-badge">
+                <span class="author-avatar">tg</span>
+                <span class="author-name">tg-seerist</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill fresh">&lt;1d</span></td>
+          </tr>
+          <tr>
+            <td><a class="pr-link" href="#">#70</a></td>
+            <td class="col-type"><span class="type-pill type-feat">feat</span></td>
+            <td><span class="pr-title">AAAS-10711 region cascading geofilter</span></td>
+            <td class="threads-cell">
+              <span class="thread-badge">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                2
+              </span>
+            </td>
+            <td class="author-cell">
+              <span class="author-badge">
+                <span class="author-avatar">at</span>
+                <span class="author-name">alexander-thorwaldson</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill fresh">&lt;1d</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Repo: Seerist/scry -->
+    <div class="repo-group">
+      <div class="repo-group-header">
+        <svg class="repo-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 2.5A2.5 2.5 0 0 1 4.5 0h8.75a.75.75 0 0 1 .75.75v12.5a.75.75 0 0 1-.75.75h-2.5a.75.75 0 0 1 0-1.5h1.75v-2h-8a1 1 0 0 0-.714 1.7.75.75 0 1 1-1.072 1.05A2.495 2.495 0 0 1 2 11.5Zm10.5-1h-8a1 1 0 0 0-1 1v6.708A2.486 2.486 0 0 1 4.5 9h8Z"/>
+        </svg>
+        <span class="repo-name">Seerist/scry</span>
+        <span class="repo-pr-count">3 PRs</span>
+      </div>
+      <table class="pr-table">
+        <thead>
+          <tr>
+            <th>PR</th>
+            <th class="col-type"></th>
+            <th>Title</th>
+            <th style="text-align:right">Threads</th>
+            <th>Author</th>
+            <th style="text-align:right">Open</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a class="pr-link" href="#">#15</a></td>
+            <td class="col-type"><span class="type-pill type-build">build</span></td>
+            <td><span class="pr-title bot">Bump @adonisjs/core from 6.19.0 to 7.3.0</span></td>
+            <td class="threads-cell">
+              <span class="thread-badge high">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                8
+              </span>
+            </td>
+            <td class="author-cell">
+              <span class="author-badge bot">
+                <span class="author-avatar">db</span>
+                <span class="author-name">dependabot[bot]</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill old">14d</span></td>
+          </tr>
+          <tr>
+            <td><a class="pr-link" href="#">#39</a></td>
+            <td class="col-type"><span class="type-pill type-feat">feat</span></td>
+            <td><span class="pr-title">scribe top events</span></td>
+            <td class="threads-cell">
+              <span class="thread-badge">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                4
+              </span>
+            </td>
+            <td class="author-cell">
+              <span class="author-badge">
+                <span class="author-avatar">ro</span>
+                <span class="author-name">rodartha</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill stale">12d</span></td>
+          </tr>
+          <tr>
+            <td><a class="pr-link" href="#">#91</a></td>
+            <td class="col-type"><span class="type-pill type-build">build</span></td>
+            <td><span class="pr-title bot">Bump @ai-sdk/openai from 2.0.16 to 3.0.52</span></td>
+            <td class="threads-cell">
+              <span class="thread-badge">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.458 1.458 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>
+                1
+              </span>
+            </td>
+            <td class="author-cell">
+              <span class="author-badge bot">
+                <span class="author-avatar">db</span>
+                <span class="author-name">dependabot[bot]</span>
+              </span>
+            </td>
+            <td class="age-cell"><span class="age-pill recent">2d</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── Footer ───────────────────────────────────────────────────────────── -->
+  <footer class="page-footer">
+    <span class="footer-seg green">6 ready for review</span>
+    <span class="footer-sep">&middot;</span>
+    <span class="footer-seg amber">5 blocked by comments</span>
+    <span class="footer-sep">&middot;</span>
+    <span class="footer-seg">5 skipped (CI pending/failing/draft)</span>
+  </footer>
+
+</div>
+</body>
+</html>

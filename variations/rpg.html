@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Review Queue</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700&family=IM+Fell+English:ital@0;1&family=MedievalSharp&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/rpg-awesome@0.2.0/css/rpg-awesome.min.css" />
+  <style>
+    /* ─── Reset & Base ───────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --gold-bright:   #f5c842;
+      --gold-mid:      #c9952a;
+      --gold-dark:     #8a6010;
+      --gold-dim:      #5a3e0a;
+      --parchment-lt:  #f2e4c4;
+      --parchment-mid: #e8d4a0;
+      --parchment-dk:  #d4b870;
+      --ink:           #2a1a04;
+      --ink-mid:       #3d2808;
+      --ink-light:     #6b4c1a;
+      --blood-red:     #8b1a1a;
+      --blood-dim:     #5a0f0f;
+      --ember:         #c24a0c;
+      --shadow:        rgba(0,0,0,0.65);
+      --rune-blue:     #3a5a8c;
+      --hazard-1:      #a8b820;   /* low  */
+      --hazard-2:      #c9952a;   /* mid  */
+      --hazard-3:      #c24a0c;   /* high */
+      --hazard-4:      #8b1a1a;   /* dire */
+    }
+
+    html {
+      background-color: #0f0a02;
+      background-image:
+        radial-gradient(ellipse 80% 60% at 50% 0%, #1e0f00 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 20% 100%, #1a0800 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 80% 100%, #120800 0%, transparent 60%);
+      min-height: 100vh;
+    }
+
+    body {
+      font-family: 'IM Fell English', Georgia, serif;
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 2rem 1rem 4rem;
+    }
+
+    /* ─── Page wrapper ───────────────────────────────────────────── */
+    .page {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* ─── Section panel (dark ornate WoW-style frame) ───────────── */
+    .panel {
+      margin-bottom: 2.5rem;
+      position: relative;
+    }
+
+    /* Drop shadow beneath the panel */
+    .panel::before {
+      content: '';
+      position: absolute;
+      inset: 8px 4px -8px;
+      background: rgba(0,0,0,0.65);
+      filter: blur(16px);
+      z-index: -1;
+      border-radius: 4px;
+    }
+
+    /* Top-center ornament glyph */
+    .panel::after {
+      content: '✦';
+      position: absolute;
+      top: -0.72em;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 1rem;
+      color: var(--gold-mid);
+      text-shadow: 0 0 8px var(--gold-dim);
+      z-index: 2;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .panel-body {
+      background:
+        /* candlelight radial glow — very faint warm centre */
+        radial-gradient(ellipse 70% 50% at 50% 30%, rgba(180, 110, 20, 0.07) 0%, transparent 70%),
+        /* dark vellum base */
+        linear-gradient(160deg, #1e1106 0%, #160c04 40%, #0d0700 100%);
+      border: 3px solid var(--gold-dark);
+      outline: 1px solid var(--gold-dim);
+      outline-offset: -6px;
+      padding: 0;
+      position: relative;
+    }
+
+    /* Corner diamond ornaments — top-left & top-right */
+    .panel-body::before {
+      content: '◆';
+      position: absolute;
+      top: -0.55em;
+      left: 0.45em;
+      font-size: 0.75rem;
+      color: var(--gold-dark);
+      line-height: 1;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Corner diamond ornaments — bottom-left & bottom-right via a wrapper trick:
+       we use the bottom corners on panel-body::after */
+    .panel-body::after {
+      content: '◆';
+      position: absolute;
+      bottom: -0.55em;
+      right: 0.45em;
+      font-size: 0.75rem;
+      color: var(--gold-dark);
+      line-height: 1;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .panel-content {
+      padding: 1.2rem 1.8rem 1.4rem;
+    }
+
+    /* ─── Section header ─────────────────────────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.1rem;
+      padding-bottom: 0.7rem;
+      border-bottom: 1px solid var(--gold-dark);
+      position: relative;
+    }
+
+    .section-header::after {
+      content: '';
+      position: absolute;
+      bottom: -5px;
+      left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(201,149,42,0.4), transparent);
+    }
+
+    .section-title-group {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+    }
+
+    .section-icon {
+      font-size: 1.4rem;
+      line-height: 1;
+    }
+
+    .section-title {
+      font-family: 'Cinzel', serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--gold-bright);
+      letter-spacing: 0.05em;
+      line-height: 1.2;
+      text-shadow: 0 0 10px rgba(245, 200, 66, 0.25);
+    }
+
+    .section-subtitle {
+      font-family: 'IM Fell English', serif;
+      font-style: italic;
+      font-size: 0.82rem;
+      color: var(--gold-mid);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .last-updated {
+      font-family: 'Cinzel', serif;
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      color: var(--gold-dark);
+      white-space: nowrap;
+    }
+
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(180deg, #c9a44a 0%, #8a6010 100%);
+      border: 2px solid var(--gold-dark);
+      border-radius: 3px;
+      color: var(--ink);
+      cursor: pointer;
+      transition: filter 0.15s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,220,100,0.3);
+      font-size: 0.9rem;
+      line-height: 1;
+    }
+
+    .refresh-btn:hover {
+      filter: brightness(1.25);
+    }
+
+    .refresh-btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+
+    /* ─── Repo group heading ─────────────────────────────────────── */
+    .repo-group {
+      margin-bottom: 0.5rem;
+    }
+
+    .repo-group + .repo-group {
+      margin-top: 1.2rem;
+      padding-top: 1rem;
+      border-top: 1px dashed rgba(138, 96, 16, 0.4);
+    }
+
+    .repo-heading {
+      font-family: 'Cinzel', serif;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--gold-mid);
+      margin-bottom: 0.5rem;
+      padding-left: 0.2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .repo-heading::before {
+      content: '⚔';
+      font-size: 0.7rem;
+    }
+
+    /* ─── Quest table ────────────────────────────────────────────── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    thead th {
+      font-family: 'Cinzel', serif;
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold-mid);
+      padding: 0.35rem 0.6rem;
+      text-align: left;
+      border-bottom: 1px solid var(--gold-dark);
+      background: rgba(138, 96, 16, 0.12);
+    }
+
+    thead th:last-child {
+      text-align: center;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid rgba(138, 96, 16, 0.18);
+      transition: background 0.1s;
+    }
+
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    tbody td {
+      padding: 0.45rem 0.6rem;
+      vertical-align: middle;
+      color: var(--parchment-lt);
+    }
+
+    /* PR number link */
+    .pr-link {
+      font-family: 'Cinzel', serif;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #7aaee8;
+      text-decoration: none;
+      white-space: nowrap;
+      border-bottom: 1px dotted #7aaee8;
+      transition: color 0.15s;
+    }
+
+    .pr-link:hover {
+      color: var(--gold-bright);
+      border-bottom-color: var(--gold-mid);
+      text-shadow: 0 0 6px var(--gold-dim);
+    }
+
+    /* Title — truncate long names */
+    .quest-title {
+      font-family: 'IM Fell English', serif;
+      font-size: 0.9rem;
+      color: var(--parchment-lt);
+      max-width: 260px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Author */
+    .author {
+      font-family: 'IM Fell English', serif;
+      font-style: italic;
+      font-size: 0.84rem;
+      color: var(--parchment-mid);
+      white-space: nowrap;
+    }
+
+    /* Bot author */
+    .author-bot {
+      font-style: normal;
+      font-size: 0.72rem;
+      opacity: 0.7;
+    }
+
+    /* Age cell */
+    .age {
+      font-family: 'Cinzel', serif;
+      font-size: 0.72rem;
+      color: var(--gold-dark);
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .age.stale {
+      color: var(--ember);
+      font-weight: 600;
+    }
+
+    .age.ancient {
+      color: var(--blood-red);
+      font-weight: 700;
+      text-shadow: 0 0 4px rgba(139,26,26,0.4);
+    }
+
+    /* Threads / Hazard level */
+    td.threads {
+      text-align: center;
+    }
+
+    .hazard {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-family: 'Cinzel', serif;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 2px;
+      white-space: nowrap;
+    }
+
+    .hazard-1 {
+      background: rgba(168, 184, 32, 0.12);
+      color: #b8c830;
+      border: 1px solid rgba(168, 184, 32, 0.35);
+    }
+
+    .hazard-2 {
+      background: rgba(201, 149, 42, 0.15);
+      color: var(--gold-mid);
+      border: 1px solid rgba(201, 149, 42, 0.4);
+    }
+
+    .hazard-3 {
+      background: rgba(194, 74, 12, 0.12);
+      color: var(--ember);
+      border: 1px solid rgba(194, 74, 12, 0.35);
+    }
+
+    .hazard-4 {
+      background: rgba(139, 26, 26, 0.15);
+      color: var(--blood-red);
+      border: 1px solid rgba(139, 26, 26, 0.4);
+      text-shadow: 0 0 4px rgba(139,26,26,0.3);
+    }
+
+    /* ─── Footer / Prophecy Board ────────────────────────────────── */
+    .prophecy {
+      text-align: center;
+      margin-top: 1rem;
+      position: relative;
+    }
+
+    .prophecy-inner {
+      display: inline-block;
+      background:
+        linear-gradient(180deg, #1a0e02 0%, #0d0700 100%);
+      border: 2px solid var(--gold-dark);
+      padding: 1rem 2.5rem;
+      position: relative;
+    }
+
+    .prophecy-inner::before,
+    .prophecy-inner::after {
+      content: '◈';
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--gold-dim);
+      font-size: 1.2rem;
+    }
+
+    .prophecy-inner::before { left: 10px; }
+    .prophecy-inner::after  { right: 10px; }
+
+    .prophecy-label {
+      font-family: 'Cinzel', serif;
+      font-size: 0.6rem;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--gold-dark);
+      margin-bottom: 0.4rem;
+    }
+
+    .prophecy-stats {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .stat-pill {
+      font-family: 'Cinzel', serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 0.25rem 0.7rem;
+      border: 1px solid;
+      border-radius: 2px;
+    }
+
+    .stat-ready {
+      color: var(--gold-bright);
+      border-color: var(--gold-dark);
+      background: rgba(245, 200, 66, 0.1);
+      text-shadow: 0 0 8px var(--gold-dim);
+    }
+
+    .stat-blocked {
+      color: var(--blood-red);
+      border-color: var(--blood-dim);
+      background: rgba(139, 26, 26, 0.1);
+    }
+
+    .stat-skipped {
+      color: #7a7060;
+      border-color: #4a3e28;
+      background: rgba(90, 70, 30, 0.1);
+    }
+
+    .stat-sep {
+      font-family: 'Cinzel', serif;
+      font-size: 0.8rem;
+      color: var(--gold-dim);
+    }
+
+    /* ─── Quest type icons ──────────────────────────────────────── */
+    .quest-type {
+      font-size: 1.2rem;
+      line-height: 1;
+      text-align: center;
+      display: inline-block;
+    }
+
+    .quest-venture { color: var(--gold-mid); }
+    .quest-mend    { color: var(--ember); }
+    .quest-forge   { color: #a89060; }
+
+    .col-type   { width: 36px; text-align: center; }
+
+    /* ─── Column widths ──────────────────────────────────────────── */
+    .col-pr     { width: 60px;  }
+    .col-title  { width: auto;  }
+    .col-author { width: 170px; }
+    .col-age    { width: 56px;  }
+    .col-thread { width: 80px;  }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ══════════════════════════════════════════════════════════
+       SECTION 1 — READY QUESTS
+  ══════════════════════════════════════════════════════════ -->
+  <section class="panel">
+    <div class="panel-body">
+      <div class="panel-content">
+
+        <div class="section-header">
+          <div class="section-title-group">
+            <span class="section-icon">📜</span>
+            <div>
+              <div class="section-title">Quests Awaiting Champions</div>
+              <div class="section-subtitle">Trials passed &amp; path cleared — only a brave soul required</div>
+            </div>
+          </div>
+          <div class="controls">
+            <span class="last-updated">Scried at 12:37 PM</span>
+            <button class="refresh-btn" title="Re-scry the board" href="#">↻</button>
+          </div>
+        </div>
+
+        <!-- ── Repo: Seerist/eos ── -->
+        <div class="repo-group">
+          <div class="repo-heading">Realm of Seerist / eos</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="col-pr">Missive</th>
+                <th class="col-type"></th>
+                <th class="col-title">Quest Scroll</th>
+                <th class="col-author">Petitioner</th>
+                <th class="col-age">Aged</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a class="pr-link" href="#">#42</a></td>
+                <td><i class="ra ra-sword quest-type quest-venture" title="Venture"></i></td>
+                <td><span class="quest-title" title="AAAS-10676 copy content to clipboard">AAAS-10676 copy content to clipboard</span></td>
+                <td><span class="author">lstates7</span></td>
+                <td><span class="age stale">5d</span></td>
+              </tr>
+              <tr>
+                <td><a class="pr-link" href="#">#50</a></td>
+                <td><i class="ra ra-sword quest-type quest-venture" title="Venture"></i></td>
+                <td><span class="quest-title" title="AAAS-10700 - widget bulk actions">AAAS-10700 - widget bulk actions</span></td>
+                <td><span class="author">sureja-payalben</span></td>
+                <td><span class="age stale">4d</span></td>
+              </tr>
+              <tr>
+                <td><a class="pr-link" href="#">#69</a></td>
+                <td><i class="ra ra-wrench quest-type quest-mend" title="Mend"></i></td>
+                <td><span class="quest-title" title="broadcast elevated filters to TabbedSea...">broadcast elevated filters to TabbedSea…</span></td>
+                <td><span class="author">alexander-thorwaldson</span></td>
+                <td><span class="age">&lt;1d</span></td>
+              </tr>
+              <tr>
+                <td><a class="pr-link" href="#">#68</a></td>
+                <td><i class="ra ra-sword quest-type quest-venture" title="Venture"></i></td>
+                <td><span class="quest-title" title="enable overlay filters on search widget...">enable overlay filters on search widget…</span></td>
+                <td><span class="author">alexander-thorwaldson</span></td>
+                <td><span class="age">&lt;1d</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ── Repo: Seerist/scry ── -->
+        <div class="repo-group">
+          <div class="repo-heading">Realm of Seerist / scry</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="col-pr">Missive</th>
+                <th class="col-type"></th>
+                <th class="col-title">Quest Scroll</th>
+                <th class="col-author">Petitioner</th>
+                <th class="col-age">Aged</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a class="pr-link" href="#">#13</a></td>
+                <td><i class="ra ra-anvil quest-type quest-forge" title="Forge"></i></td>
+                <td><span class="quest-title" title="Bump tsx from 4.20.4 to 4.21.0">Bump tsx from 4.20.4 to 4.21.0</span></td>
+                <td><span class="author author-bot">dependabot[bot]</span></td>
+                <td><span class="age ancient">14d</span></td>
+              </tr>
+              <tr>
+                <td><a class="pr-link" href="#">#90</a></td>
+                <td><i class="ra ra-anvil quest-type quest-forge" title="Forge"></i></td>
+                <td><span class="quest-title" title="Bump @opensearch-project/opensearch from...">Bump @opensearch-project/opensearch from…</span></td>
+                <td><span class="author author-bot">dependabot[bot]</span></td>
+                <td><span class="age">2d</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /panel-content -->
+    </div><!-- /panel-body -->
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       SECTION 2 — CONTESTED QUESTS
+  ══════════════════════════════════════════════════════════ -->
+  <section class="panel">
+    <div class="panel-body">
+      <div class="panel-content">
+
+        <div class="section-header">
+          <div class="section-title-group">
+            <span class="section-icon">🩸</span>
+            <div>
+              <div class="section-title">Contested Quests — Disputes Unresolved</div>
+              <div class="section-subtitle">Grievances linger; the council hath not yet reached accord</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Repo: Seerist/eos ── -->
+        <div class="repo-group">
+          <div class="repo-heading">Realm of Seerist / eos</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="col-pr">Missive</th>
+                <th class="col-type"></th>
+                <th class="col-title">Quest Scroll</th>
+                <th class="col-thread">Hazard</th>
+                <th class="col-author">Petitioner</th>
+                <th class="col-age">Aged</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a class="pr-link" href="#">#72</a></td>
+                <td><i class="ra ra-wrench quest-type quest-mend" title="Mend"></i></td>
+                <td><span class="quest-title" title="AAAS-10626 add asset click handler and det...">AAAS-10626 add asset click handler and det…</span></td>
+                <td class="threads"><span class="hazard hazard-2">⚠ 4</span></td>
+                <td><span class="author">tg-seerist</span></td>
+                <td><span class="age">&lt;1d</span></td>
+              </tr>
+              <tr>
+                <td><a class="pr-link" href="#">#70</a></td>
+                <td><i class="ra ra-sword quest-type quest-venture" title="Venture"></i></td>
+                <td><span class="quest-title" title="AAAS-10711 region cascading geofilter">AAAS-10711 region cascading geofilter</span></td>
+                <td class="threads"><span class="hazard hazard-1">~ 2</span></td>
+                <td><span class="author">alexander-thorwaldson</span></td>
+                <td><span class="age">&lt;1d</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ── Repo: Seerist/scry ── -->
+        <div class="repo-group">
+          <div class="repo-heading">Realm of Seerist / scry</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="col-pr">Missive</th>
+                <th class="col-type"></th>
+                <th class="col-title">Quest Scroll</th>
+                <th class="col-thread">Hazard</th>
+                <th class="col-author">Petitioner</th>
+                <th class="col-age">Aged</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a class="pr-link" href="#">#15</a></td>
+                <td><i class="ra ra-anvil quest-type quest-forge" title="Forge"></i></td>
+                <td><span class="quest-title" title="Bump @adonisjs/core from 6.19.0 to 7.3.0">Bump @adonisjs/core from 6.19.0 to 7.3.0</span></td>
+                <td class="threads"><span class="hazard hazard-4">☠ 8</span></td>
+                <td><span class="author author-bot">dependabot[bot]</span></td>
+                <td><span class="age ancient">14d</span></td>
+              </tr>
+              <tr>
+                <td><a class="pr-link" href="#">#39</a></td>
+                <td><i class="ra ra-sword quest-type quest-venture" title="Venture"></i></td>
+                <td><span class="quest-title" title="scribe top events">scribe top events</span></td>
+                <td class="threads"><span class="hazard hazard-2">⚠ 4</span></td>
+                <td><span class="author">rodartha</span></td>
+                <td><span class="age stale">12d</span></td>
+              </tr>
+              <tr>
+                <td><a class="pr-link" href="#">#91</a></td>
+                <td><i class="ra ra-anvil quest-type quest-forge" title="Forge"></i></td>
+                <td><span class="quest-title" title="Bump @ai-sdk/openai from 2.0.16 to 3.0.52">Bump @ai-sdk/openai from 2.0.16 to 3.0.52</span></td>
+                <td class="threads"><span class="hazard hazard-1">~ 1</span></td>
+                <td><span class="author author-bot">dependabot[bot]</span></td>
+                <td><span class="age">2d</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /panel-content -->
+    </div><!-- /panel-body -->
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════
+       PROPHECY FOOTER
+  ══════════════════════════════════════════════════════════ -->
+  <footer class="prophecy">
+    <div class="prophecy-inner">
+      <div class="prophecy-label">The Oracle's Tally</div>
+      <div class="prophecy-stats">
+        <span class="stat-pill stat-ready">6 Quests Ripe for the Taking</span>
+        <span class="stat-sep">·</span>
+        <span class="stat-pill stat-blocked">5 Bound by Dispute</span>
+        <span class="stat-sep">·</span>
+        <span class="stat-pill stat-skipped">5 Passed Over</span>
+      </div>
+    </div>
+  </footer>
+
+</div><!-- /page -->
+</body>
+</html>

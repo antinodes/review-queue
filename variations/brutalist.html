@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review Queue</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --black: #000000;
+      --white: #ffffff;
+      --red: #ff0000;
+      --gray-light: #f0f0f0;
+      --gray-mid: #cccccc;
+      --border: 3px solid #000000;
+      --border-thick: 4px solid #000000;
+    }
+
+    body {
+      background: var(--white);
+      color: var(--black);
+      font-family: "Courier New", Courier, monospace;
+      font-size: 14px;
+      line-height: 1.4;
+      padding: 40px 20px 80px;
+    }
+
+    .page-wrapper {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* ---- SECTIONS ---- */
+
+    .section {
+      margin-bottom: 48px;
+      border: var(--border-thick);
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: var(--border-thick);
+      background: var(--black);
+      color: var(--white);
+    }
+
+    .section-header h2 {
+      font-family: Arial Black, Arial, sans-serif;
+      font-size: 22px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .section-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .updated-label {
+      font-size: 11px;
+      font-family: "Courier New", Courier, monospace;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--gray-mid);
+    }
+
+    .refresh-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      background: var(--white);
+      border: 3px solid var(--white);
+      color: var(--black);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .refresh-btn:hover {
+      background: var(--red);
+      border-color: var(--red);
+      color: var(--white);
+    }
+
+    /* ---- REPO GROUP ---- */
+
+    .repo-group {
+      border-bottom: var(--border);
+    }
+
+    .repo-group:last-child {
+      border-bottom: none;
+    }
+
+    .repo-label {
+      padding: 6px 16px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      background: var(--gray-light);
+      border-bottom: var(--border);
+      color: var(--black);
+    }
+
+    /* ---- TABLE ---- */
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead {
+      background: var(--black);
+      color: var(--white);
+    }
+
+    thead th {
+      padding: 8px 12px;
+      text-align: left;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 10px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border-right: 2px solid #333333;
+    }
+
+    thead th:last-child {
+      border-right: none;
+    }
+
+    tbody tr {
+      border-bottom: 2px solid var(--black);
+    }
+
+    tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: #ffffcc;
+    }
+
+    tbody td {
+      padding: 10px 12px;
+      vertical-align: top;
+      border-right: 2px solid var(--black);
+      font-family: "Courier New", Courier, monospace;
+      font-size: 13px;
+    }
+
+    tbody td:last-child {
+      border-right: none;
+    }
+
+    /* ---- COLUMN WIDTHS ---- */
+
+    .col-pr    { width: 64px;  white-space: nowrap; }
+    .col-title { }
+    .col-author{ width: 180px; }
+    .col-open  { width: 52px;  text-align: center; white-space: nowrap; }
+    .col-threads { width: 72px; text-align: center; white-space: nowrap; }
+
+    /* ---- PR LINK ---- */
+
+    a.pr-link {
+      color: var(--red);
+      text-decoration: none;
+      font-weight: bold;
+      font-size: 14px;
+      border-bottom: 2px solid var(--red);
+    }
+
+    a.pr-link:hover {
+      background: var(--red);
+      color: var(--white);
+      border-bottom-color: var(--red);
+    }
+
+    /* ---- TITLE CELL ---- */
+
+    .pr-title {
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 420px;
+    }
+
+    /* ---- AUTHOR ---- */
+
+    .pr-author {
+      font-size: 12px;
+      color: #444444;
+    }
+
+    .pr-author.bot {
+      color: #888888;
+      font-style: italic;
+    }
+
+    /* ---- AGE ---- */
+
+    .age {
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .age.fresh {
+      color: var(--black);
+    }
+
+    .age.old {
+      color: var(--red);
+      font-weight: 900;
+    }
+
+    /* ---- THREAD COUNT ---- */
+
+    .thread-count {
+      display: inline-block;
+      background: var(--red);
+      color: var(--white);
+      font-weight: 900;
+      font-size: 13px;
+      min-width: 28px;
+      padding: 2px 6px;
+      text-align: center;
+      font-family: Arial Black, Arial, sans-serif;
+    }
+
+    .thread-count.single {
+      background: var(--black);
+    }
+
+    /* ---- TYPE BADGE ---- */
+
+    .type-badge {
+      display: inline-block;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 2px 5px;
+      border-radius: 0;
+      white-space: nowrap;
+    }
+
+    .type-feat  { background: var(--black); color: var(--white); }
+    .type-fix   { background: var(--red);   color: var(--white); }
+    .type-build { background: #888888;      color: var(--white); }
+
+    .col-type { width: 58px; white-space: nowrap; }
+
+    /* ---- FOOTER ---- */
+
+    .page-footer {
+      border-top: var(--border-thick);
+      padding-top: 20px;
+      margin-top: 8px;
+    }
+
+    .summary-line {
+      font-family: Arial Black, Arial, sans-serif;
+      font-size: 18px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      line-height: 1.5;
+    }
+
+    .summary-line .count-ready {
+      color: var(--black);
+      background: #ffffcc;
+      padding: 0 4px;
+    }
+
+    .summary-line .count-blocked {
+      color: var(--white);
+      background: var(--red);
+      padding: 0 4px;
+    }
+
+    .summary-line .count-skipped {
+      color: var(--black);
+      background: var(--gray-mid);
+      padding: 0 4px;
+    }
+
+    .footer-note {
+      margin-top: 10px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #888888;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-wrapper">
+
+    <!-- SECTION 1: READY FOR REVIEW -->
+    <section class="section" aria-labelledby="ready-heading">
+      <div class="section-header">
+        <h2 id="ready-heading">Ready for Review</h2>
+        <div class="section-controls">
+          <span class="updated-label">Updated 12:37 PM</span>
+          <button class="refresh-btn" title="Refresh" aria-label="Refresh">&#8635;</button>
+        </div>
+      </div>
+
+      <!-- Repo group: Seerist/eos -->
+      <div class="repo-group">
+        <div class="repo-label">Seerist/eos</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="col-pr">PR</th>
+              <th class="col-type"></th>
+              <th class="col-title">Title</th>
+              <th class="col-author">Author</th>
+              <th class="col-open">Open</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#42</a></td>
+              <td class="col-type"><span class="type-badge type-feat">feat</span></td>
+              <td class="col-title"><span class="pr-title">AAAS-10676 copy content to clipboard</span></td>
+              <td><span class="pr-author">lstates7</span></td>
+              <td class="col-open"><span class="age old">5d</span></td>
+            </tr>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#50</a></td>
+              <td class="col-type"><span class="type-badge type-feat">feat</span></td>
+              <td class="col-title"><span class="pr-title">AAAS-10700 - widget bulk actions</span></td>
+              <td><span class="pr-author">sureja-payalben</span></td>
+              <td class="col-open"><span class="age old">4d</span></td>
+            </tr>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#69</a></td>
+              <td class="col-type"><span class="type-badge type-fix">fix</span></td>
+              <td class="col-title"><span class="pr-title">broadcast elevated filters to TabbedSea&hellip;</span></td>
+              <td><span class="pr-author">alexander-thorwaldson</span></td>
+              <td class="col-open"><span class="age fresh">&lt;1d</span></td>
+            </tr>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#68</a></td>
+              <td class="col-type"><span class="type-badge type-feat">feat</span></td>
+              <td class="col-title"><span class="pr-title">enable overlay filters on search widget&hellip;</span></td>
+              <td><span class="pr-author">alexander-thorwaldson</span></td>
+              <td class="col-open"><span class="age fresh">&lt;1d</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Repo group: Seerist/scry -->
+      <div class="repo-group">
+        <div class="repo-label">Seerist/scry</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="col-pr">PR</th>
+              <th class="col-type"></th>
+              <th class="col-title">Title</th>
+              <th class="col-author">Author</th>
+              <th class="col-open">Open</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#13</a></td>
+              <td class="col-type"><span class="type-badge type-build">build</span></td>
+              <td class="col-title"><span class="pr-title">Bump tsx from 4.20.4 to 4.21.0</span></td>
+              <td><span class="pr-author bot">dependabot[bot]</span></td>
+              <td class="col-open"><span class="age old">14d</span></td>
+            </tr>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#90</a></td>
+              <td class="col-type"><span class="type-badge type-build">build</span></td>
+              <td class="col-title"><span class="pr-title">Bump @opensearch-project/opensearch from&hellip;</span></td>
+              <td><span class="pr-author bot">dependabot[bot]</span></td>
+              <td class="col-open"><span class="age fresh">2d</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 2: BLOCKED BY COMMENTS -->
+    <section class="section" aria-labelledby="blocked-heading">
+      <div class="section-header">
+        <h2 id="blocked-heading">Blocked by Comments</h2>
+      </div>
+
+      <!-- Repo group: Seerist/eos -->
+      <div class="repo-group">
+        <div class="repo-label">Seerist/eos</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="col-pr">PR</th>
+              <th class="col-type"></th>
+              <th class="col-title">Title</th>
+              <th class="col-threads">Threads</th>
+              <th class="col-author">Author</th>
+              <th class="col-open">Open</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#72</a></td>
+              <td class="col-type"><span class="type-badge type-fix">fix</span></td>
+              <td class="col-title"><span class="pr-title">AAAS-10626 add asset click handler and det&hellip;</span></td>
+              <td class="col-threads"><span class="thread-count">4</span></td>
+              <td><span class="pr-author">tg-seerist</span></td>
+              <td class="col-open"><span class="age fresh">&lt;1d</span></td>
+            </tr>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#70</a></td>
+              <td class="col-type"><span class="type-badge type-feat">feat</span></td>
+              <td class="col-title"><span class="pr-title">AAAS-10711 region cascading geofilter</span></td>
+              <td class="col-threads"><span class="thread-count single">2</span></td>
+              <td><span class="pr-author">alexander-thorwaldson</span></td>
+              <td class="col-open"><span class="age fresh">&lt;1d</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Repo group: Seerist/scry -->
+      <div class="repo-group">
+        <div class="repo-label">Seerist/scry</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="col-pr">PR</th>
+              <th class="col-type"></th>
+              <th class="col-title">Title</th>
+              <th class="col-threads">Threads</th>
+              <th class="col-author">Author</th>
+              <th class="col-open">Open</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#15</a></td>
+              <td class="col-type"><span class="type-badge type-build">build</span></td>
+              <td class="col-title"><span class="pr-title">Bump @adonisjs/core from 6.19.0 to 7.3.0</span></td>
+              <td class="col-threads"><span class="thread-count">8</span></td>
+              <td><span class="pr-author bot">dependabot[bot]</span></td>
+              <td class="col-open"><span class="age old">14d</span></td>
+            </tr>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#39</a></td>
+              <td class="col-type"><span class="type-badge type-feat">feat</span></td>
+              <td class="col-title"><span class="pr-title">scribe top events</span></td>
+              <td class="col-threads"><span class="thread-count">4</span></td>
+              <td><span class="pr-author">rodartha</span></td>
+              <td class="col-open"><span class="age old">12d</span></td>
+            </tr>
+            <tr>
+              <td class="col-pr"><a class="pr-link" href="#">#91</a></td>
+              <td class="col-type"><span class="type-badge type-build">build</span></td>
+              <td class="col-title"><span class="pr-title">Bump @ai-sdk/openai from 2.0.16 to 3.0.52</span></td>
+              <td class="col-threads"><span class="thread-count single">1</span></td>
+              <td><span class="pr-author bot">dependabot[bot]</span></td>
+              <td class="col-open"><span class="age fresh">2d</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="page-footer">
+      <p class="summary-line">
+        <span class="count-ready">6 READY</span>
+        &nbsp;&nbsp;
+        <span class="count-blocked">5 BLOCKED</span>
+        &nbsp;&nbsp;
+        <span class="count-skipped">5 SKIPPED</span>
+      </p>
+      <p class="footer-note">Skipped: CI pending / CI failing / draft &mdash; not shown above</p>
+    </footer>
+
+  </div>
+</body>
+</html>
