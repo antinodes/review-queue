@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="description" content="GitHub PR review queue dashboard" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>Review Queue</title>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Review Queue</h1>
+        <div class="controls">
+          <span id="last-updated"></span>
+          <button id="refresh-btn" title="Refresh now">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 3a5 5 0 0 0-4.546 2.914.5.5 0 0 1-.908-.418A6 6 0 1 1 2 8a.5.5 0 0 1 1 0 5 5 0 1 0 5-5z"/>
+              <path d="M8 1a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H5a.5.5 0 0 1 0-1h2.5V1.5A.5.5 0 0 1 8 1z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div id="token-prompt" class="token-prompt hidden">
+        <p>Enter a GitHub personal access token with <code>repo</code> scope:</p>
+        <form id="token-form">
+          <input type="password" id="token-input" placeholder="ghp_..." autocomplete="off" />
+          <button type="submit">Save</button>
+        </form>
+        <p class="hint">Token is stored in localStorage on this device only.</p>
+      </div>
+
+      <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <span>Fetching PRs...</span>
+      </div>
+
+      <div id="error" class="error hidden"></div>
+
+      <main id="content" class="hidden">
+        <section id="ready-section">
+          <h2>Ready for Review</h2>
+          <div id="ready-list"></div>
+        </section>
+
+        <section id="blocked-section">
+          <h2>Blocked by Comments</h2>
+          <div id="blocked-list"></div>
+        </section>
+
+        <footer id="summary"></footer>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
