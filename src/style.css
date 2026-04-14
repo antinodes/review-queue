@@ -412,7 +412,10 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
   outline-offset: -6px;
   padding: 20px 24px;
   margin-bottom: 2.5rem;
+  overflow: hidden;
 }
+[data-theme="rpg"] table { table-layout: fixed; }
+[data-theme="rpg"] .title-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Corner ornaments */
 [data-theme="rpg"] section::before,
 [data-theme="rpg"] section::after {
