@@ -35,6 +35,7 @@ export function classifyReviewPRs(
 
     const detail = detailsByRepo.get(pr.repo)?.find((d) => d.number === pr.number)
     if (!detail) { skippedCount++; continue }
+    if (detail.viewerReviewState === 'APPROVED') { skippedCount++; continue }
     if (detail.ciState !== 'SUCCESS') { skippedCount++; continue }
 
     const classified = buildClassified(pr, detail, detail.unresolvedThreads > 0 ? 'blocked' : 'ready')

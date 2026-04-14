@@ -16,6 +16,7 @@ export interface PRDetail {
   ciState: string | null
   unresolvedThreads: number
   reviewDecision: string | null
+  viewerReviewState: string | null
   timelineEvents: TimelineEvent[]
 }
 
@@ -39,6 +40,9 @@ interface RawPRDetail {
     }>
   }
   reviewDecision: string | null
+  latestOpinionatedReviews: {
+    nodes: Array<{ author: { login: string }; state: string }>
+  }
   reviewThreads: {
     nodes: Array<{ isResolved: boolean }>
   }
@@ -101,6 +105,9 @@ function buildPRFragment(number: number): string {
           }
         }
       }
+      latestOpinionatedReviews(first: 20) {
+        nodes { author { login } state }
+      }
       reviewThreads(first: 100) {
         nodes { isResolved }
       }
@@ -114,10 +121,24 @@ function buildPRFragment(number: number): string {
     }`
 }
 
+export async function fetchViewerLogin(token: string): Promise<string> {
+  const response = await fetch(GRAPHQL_API, {
+    method: 'POST',
+    headers: headers(token),
+    body: JSON.stringify({ query: '{ viewer { login } }' }),
+  })
+  if (!response.ok) {
+    throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`)
+  }
+  const json = await response.json()
+  return json.data.viewer.login
+}
+
 export async function fetchPRDetails(
   token: string,
   repo: string,
   prNumbers: number[],
+  viewerLogin?: string,
 ): Promise<PRDetail[]> {
   const [owner, name] = repo.split('/')
   const fragments = prNumbers.map(buildPRFragment).join('\n')
@@ -154,6 +175,11 @@ export async function fetchPRDetails(
       createdAt: n.createdAt,
     }))
 
-    return { number: num, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision, timelineEvents }
+    const viewerReview = viewerLogin
+      ? pr.latestOpinionatedReviews.nodes.find((r) => r.author.login === viewerLogin)
+      : undefined
+    const viewerReviewState = viewerReview?.state ?? null
+
+    return { number: num, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision, viewerReviewState, timelineEvents }
   })
 }

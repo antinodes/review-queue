@@ -1,4 +1,4 @@
-import { searchReviewRequested, searchAuthored, fetchPRDetails } from './github.ts'
+import { searchReviewRequested, searchAuthored, fetchPRDetails, fetchViewerLogin } from './github.ts'
 import type { SearchPR } from './github.ts'
 import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, isDependabot } from './classify.ts'
 import type { ReviewResult, MyPRsResult, DependabotResult } from './classify.ts'
@@ -96,7 +96,7 @@ function setText(id: string, text: string): void {
 
 // ── Data fetching ──
 
-async function fetchDetails(token: string, prs: SearchPR[]): Promise<Map<string, import('./github.ts').PRDetail[]>> {
+async function fetchDetails(token: string, prs: SearchPR[], viewerLogin: string): Promise<Map<string, import('./github.ts').PRDetail[]>> {
   const byRepo = new Map<string, number[]>()
   for (const pr of prs) {
     if (pr.isDraft) continue
@@ -107,7 +107,7 @@ async function fetchDetails(token: string, prs: SearchPR[]): Promise<Map<string,
 
   const entries = await Promise.all(
     [...byRepo.entries()].map(async ([repo, numbers]) => {
-      const details = await fetchPRDetails(token, repo, numbers)
+      const details = await fetchPRDetails(token, repo, numbers, viewerLogin)
       return [repo, details] as const
     }),
   )
@@ -125,10 +125,11 @@ async function loadQueue(token: string): Promise<void> {
   }
 
   try {
-    // Fetch review-requested and authored PRs in parallel
-    const [reviewPRs, authoredPRs] = await Promise.all([
+    // Fetch review-requested, authored PRs, and viewer login in parallel
+    const [reviewPRs, authoredPRs, viewerLogin] = await Promise.all([
       searchReviewRequested(token),
       searchAuthored(token),
+      fetchViewerLogin(token),
     ])
 
     // Split review PRs into human and dependabot
@@ -137,7 +138,7 @@ async function loadQueue(token: string): Promise<void> {
 
     // Collect all unique PRs for GraphQL batching
     const allPRs = [...reviewPRs, ...authoredPRs]
-    const detailsByRepo = await fetchDetails(token, allPRs)
+    const detailsByRepo = await fetchDetails(token, allPRs, viewerLogin)
 
     cachedReviews = classifyReviewPRs(humanReviewPRs, detailsByRepo)
     cachedMyPRs = classifyMyPRs(authoredPRs, detailsByRepo)
