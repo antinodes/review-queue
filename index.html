@@ -13,18 +13,6 @@
   <body>
     <div id="progress-bar"></div>
     <div id="app">
-      <header>
-        <div class="controls">
-          <span id="last-updated"></span>
-          <button id="refresh-btn" title="Refresh now">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 3a5 5 0 0 0-4.546 2.914.5.5 0 0 1-.908-.418A6 6 0 1 1 2 8a.5.5 0 0 1 1 0 5 5 0 1 0 5-5z"/>
-              <path d="M8 1a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H5a.5.5 0 0 1 0-1h2.5V1.5A.5.5 0 0 1 8 1z"/>
-            </svg>
-          </button>
-        </div>
-      </header>
-
       <div id="token-prompt" class="token-prompt hidden">
         <p>Enter a GitHub personal access token with <code>repo</code> scope:</p>
         <form id="token-form">
@@ -43,7 +31,18 @@
 
       <main id="content" class="hidden">
         <section id="ready-section">
-          <h2>Ready for Review</h2>
+          <div class="section-header">
+            <h2>Ready for Review</h2>
+            <div class="controls">
+              <span id="last-updated"></span>
+              <button id="refresh-btn" title="Refresh now">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 3a5 5 0 0 0-4.546 2.914.5.5 0 0 1-.908-.418A6 6 0 1 1 2 8a.5.5 0 0 1 1 0 5 5 0 1 0 5-5z"/>
+                  <path d="M8 1a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5H5a.5.5 0 0 1 0-1h2.5V1.5A.5.5 0 0 1 8 1z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
           <div id="ready-list"></div>
         </section>
 
