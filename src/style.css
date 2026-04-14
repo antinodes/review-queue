@@ -33,16 +33,11 @@ body {
 
 header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
-}
-
-header h1 {
-  font-size: 20px;
-  font-weight: 600;
 }
 
 .controls {
@@ -274,6 +269,37 @@ footer {
   color: var(--text-muted);
   padding-top: 16px;
   border-top: 1px solid var(--border);
+}
+
+/* Progress bar */
+#progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  z-index: 100;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+#progress-bar.active {
+  opacity: 1;
+}
+
+#progress-bar::after {
+  content: '';
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: var(--link);
+  animation: progress 1.2s ease-in-out infinite;
+}
+
+@keyframes progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
 }
 
 /* Utility */

@@ -9,6 +9,7 @@ const REFRESH_INTERVAL_MS = 3 * 60 * 1000 // 3 minutes
 const $ = (id: string) => document.getElementById(id)!
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+let hasLoadedOnce = false
 
 function showTokenPrompt(): void {
   $('token-prompt').classList.remove('hidden')
@@ -22,9 +23,14 @@ function hideTokenPrompt(): void {
 }
 
 async function loadQueue(token: string): Promise<void> {
-  $('loading').classList.remove('hidden')
-  $('content').classList.add('hidden')
   $('error').classList.add('hidden')
+
+  if (hasLoadedOnce) {
+    $('progress-bar').classList.add('active')
+  } else {
+    $('loading').classList.remove('hidden')
+    $('content').classList.add('hidden')
+  }
 
   try {
     const prs = await searchReviewRequested(token)
@@ -54,12 +60,15 @@ async function loadQueue(token: string): Promise<void> {
     renderSummary($('summary'), ready.length, blocked.length, skippedCount)
 
     $('loading').classList.add('hidden')
+    $('progress-bar').classList.remove('active')
     $('content').classList.remove('hidden')
+    hasLoadedOnce = true
 
     updateTimestamp()
     updateBadge(ready.length)
   } catch (err) {
     $('loading').classList.add('hidden')
+    $('progress-bar').classList.remove('active')
     const message = err instanceof Error ? err.message : 'Unknown error'
 
     if (message.includes('401')) {
