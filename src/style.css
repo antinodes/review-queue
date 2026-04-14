@@ -68,6 +68,8 @@ body {
 .token-prompt p { margin-bottom: 12px; font-size: 14px; }
 .token-prompt code { background: var(--bg); padding: 2px 6px; border-radius: 3px; font-size: 13px; }
 .token-prompt .hint { color: var(--text-muted); font-size: 12px; margin-bottom: 0; }
+.token-prompt .hint a { color: var(--link); text-decoration: underline; }
+.token-prompt .hint a:hover { color: var(--text); }
 
 #token-form { display: flex; gap: 8px; margin-bottom: 12px; }
 #token-input {
