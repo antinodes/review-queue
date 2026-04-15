@@ -1,6 +1,6 @@
 import type { SearchPR, PRDetail } from './github.ts'
 
-export type Bucket = 'ready' | 'blocked' | 'skipped' | 'failing' | 'needsReview' | 'draft'
+export type Bucket = 'ready' | 'blocked' | 'skipped' | 'failing' | 'building' | 'needsReview' | 'draft'
 
 export interface ClassifiedPR {
   number: number
@@ -8,6 +8,7 @@ export interface ClassifiedPR {
   url: string
   author: string
   repo: string
+  headRefName: string
   daysOpen: string
   bucket: Bucket
   unresolvedThreads: number
@@ -53,6 +54,7 @@ export interface MyPRsResult {
   readyToMerge: ClassifiedPR[]
   needsReview: ClassifiedPR[]
   blocked: ClassifiedPR[]
+  building: ClassifiedPR[]
   failing: ClassifiedPR[]
   drafts: ClassifiedPR[]
 }
@@ -64,17 +66,24 @@ export function classifyMyPRs(
   const readyToMerge: ClassifiedPR[] = []
   const needsReview: ClassifiedPR[] = []
   const blocked: ClassifiedPR[] = []
+  const building: ClassifiedPR[] = []
   const failing: ClassifiedPR[] = []
   const drafts: ClassifiedPR[] = []
 
   for (const pr of searchResults) {
+    const detail = detailsByRepo.get(pr.repo)?.find((d) => d.number === pr.number)
+
     if (pr.isDraft) {
-      drafts.push(buildClassified(pr, null, 'draft'))
+      drafts.push(buildClassified(pr, detail ?? null, 'draft'))
       continue
     }
 
-    const detail = detailsByRepo.get(pr.repo)?.find((d) => d.number === pr.number)
     if (!detail) continue
+
+    if (detail.ciState === 'PENDING') {
+      building.push(buildClassified(pr, detail, 'building'))
+      continue
+    }
 
     if (detail.ciState !== 'SUCCESS') {
       failing.push(buildClassified(pr, detail, 'failing'))
@@ -93,7 +102,7 @@ export function classifyMyPRs(
     }
   }
 
-  return { readyToMerge, needsReview, blocked, failing, drafts }
+  return { readyToMerge, needsReview, blocked, building, failing, drafts }
 }
 
 // ── Dependabot classification ──
@@ -101,6 +110,7 @@ export function classifyMyPRs(
 export interface DependabotResult {
   ready: ClassifiedPR[]
   blocked: ClassifiedPR[]
+  building: ClassifiedPR[]
   failing: ClassifiedPR[]
 }
 
@@ -110,6 +120,7 @@ export function classifyDependabotPRs(
 ): DependabotResult {
   const ready: ClassifiedPR[] = []
   const blocked: ClassifiedPR[] = []
+  const building: ClassifiedPR[] = []
   const failing: ClassifiedPR[] = []
 
   for (const pr of searchResults) {
@@ -117,6 +128,11 @@ export function classifyDependabotPRs(
 
     const detail = detailsByRepo.get(pr.repo)?.find((d) => d.number === pr.number)
     if (!detail) continue
+
+    if (detail.ciState === 'PENDING') {
+      building.push(buildClassified(pr, detail, 'building'))
+      continue
+    }
 
     if (detail.ciState !== 'SUCCESS') {
       failing.push(buildClassified(pr, detail, 'failing'))
@@ -130,7 +146,7 @@ export function classifyDependabotPRs(
     }
   }
 
-  return { ready, blocked, failing }
+  return { ready, blocked, building, failing }
 }
 
 // ── Helpers ──
@@ -142,6 +158,7 @@ function buildClassified(pr: SearchPR, detail: PRDetail | null, bucket: Bucket):
     url: pr.url,
     author: pr.author,
     repo: pr.repo,
+    headRefName: detail?.headRefName ?? '',
     daysOpen: calcDaysOpen(pr.createdAt, detail?.timelineEvents ?? []),
     bucket,
     unresolvedThreads: detail?.unresolvedThreads ?? 0,

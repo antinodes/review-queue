@@ -13,6 +13,7 @@ export interface SearchPR {
 
 export interface PRDetail {
   number: number
+  headRefName: string
   ciState: string | null
   unresolvedThreads: number
   reviewDecision: string | null
@@ -32,6 +33,7 @@ interface GraphQLResponse {
 
 interface RawPRDetail {
   number: number
+  headRefName: string
   ciStatus: {
     nodes: Array<{
       commit: {
@@ -97,6 +99,7 @@ function buildPRFragment(number: number): string {
   return `
     pr${number}: pullRequest(number: ${number}) {
       number
+      headRefName
       reviewDecision
       ciStatus: commits(last: 1) {
         nodes {
@@ -180,6 +183,6 @@ export async function fetchPRDetails(
       : undefined
     const viewerReviewState = viewerReview?.state ?? null
 
-    return { number: num, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision, viewerReviewState, timelineEvents }
+    return { number: num, headRefName: pr.headRefName, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision, viewerReviewState, timelineEvents }
   })
 }

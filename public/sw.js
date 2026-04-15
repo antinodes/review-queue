@@ -1,4 +1,4 @@
-const CACHE_NAME = 'review-queue-v1'
+const CACHE_NAME = 'review-queue-v2'
 
 self.addEventListener('install', () => {
   self.skipWaiting()

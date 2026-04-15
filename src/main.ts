@@ -64,29 +64,33 @@ function renderActiveTab(): void {
     setText('my-ready-h', t.sections.readyToMerge)
     setText('my-needsReview-h', t.sections.needsReview)
     setText('my-blocked-h', t.sections.myBlocked)
+    setText('my-building-h', t.sections.building)
     setText('my-failing-h', t.sections.failingCI)
     setText('my-draft-h', t.sections.draft)
     renderSection($('my-ready'), m.readyToMerge, t, { showAuthor: false })
     renderSection($('my-needsReview'), m.needsReview, t, { showAuthor: false })
     renderSection($('my-blocked'), m.blocked, t, { showThreads: true, showAuthor: false })
+    renderSection($('my-building'), m.building, t, { showCI: true, showAuthor: false })
     renderSection($('my-failing'), m.failing, t, { showCI: true, showAuthor: false })
     renderSection($('my-draft'), m.drafts, t, { showAuthor: false })
-    const total = m.readyToMerge.length + m.needsReview.length + m.blocked.length + m.failing.length + m.drafts.length
+    const total = m.readyToMerge.length + m.needsReview.length + m.blocked.length + m.building.length + m.failing.length + m.drafts.length
     renderSummary($('my-summary'),
-      `${total} open — ${m.readyToMerge.length} ready to merge, ${m.needsReview.length} needs review, ${m.blocked.length} blocked, ${m.failing.length} failing, ${m.drafts.length} draft`)
+      `${total} open — ${m.readyToMerge.length} ready to merge, ${m.needsReview.length} needs review, ${m.blocked.length} blocked, ${m.building.length} building, ${m.failing.length} failing, ${m.drafts.length} draft`)
   }
 
   if (activeTab === 'dependabot' && cachedDependabot) {
     const d = cachedDependabot
     setText('dep-ready-h', t.sections.depReady)
     setText('dep-blocked-h', t.sections.depBlocked)
+    setText('dep-building-h', t.sections.depBuilding)
     setText('dep-failing-h', t.sections.depFailing)
     renderSection($('dep-ready'), d.ready, t, { showAuthor: false })
     renderSection($('dep-blocked'), d.blocked, t, { showThreads: true, showAuthor: false })
+    renderSection($('dep-building'), d.building, t, { showCI: true, showAuthor: false })
     renderSection($('dep-failing'), d.failing, t, { showCI: true, showAuthor: false })
-    const total = d.ready.length + d.blocked.length + d.failing.length
+    const total = d.ready.length + d.blocked.length + d.building.length + d.failing.length
     renderSummary($('dep-summary'),
-      `${total} open — ${d.ready.length} ready, ${d.blocked.length} blocked, ${d.failing.length} failing`)
+      `${total} open — ${d.ready.length} ready, ${d.blocked.length} blocked, ${d.building.length} building, ${d.failing.length} failing`)
   }
 }
 
@@ -99,7 +103,6 @@ function setText(id: string, text: string): void {
 async function fetchDetails(token: string, prs: SearchPR[], viewerLogin: string): Promise<Map<string, import('./github.ts').PRDetail[]>> {
   const byRepo = new Map<string, number[]>()
   for (const pr of prs) {
-    if (pr.isDraft) continue
     const list = byRepo.get(pr.repo) ?? []
     list.push(pr.number)
     byRepo.set(pr.repo, list)

@@ -12,11 +12,13 @@ export interface SectionLabels {
   readyToMerge: string
   needsReview: string
   myBlocked: string
+  building: string
   failingCI: string
   draft: string
   // Dependabot tab
   depReady: string
   depBlocked: string
+  depBuilding: string
   depFailing: string
 }
 
@@ -44,10 +46,12 @@ const defaultSections: SectionLabels = {
   readyToMerge: 'Ready to Merge',
   needsReview: 'Needs Review',
   myBlocked: 'Blocked by Comments',
+  building: 'Building',
   failingCI: 'Failing CI',
   draft: 'Draft',
   depReady: 'Ready for Review',
   depBlocked: 'Blocked by Comments',
+  depBuilding: 'Building',
   depFailing: 'Failing CI',
 }
 
@@ -74,10 +78,12 @@ export const themes: Record<string, ThemeConfig> = {
       readyToMerge: 'READY TO MERGE',
       needsReview: 'NEEDS REVIEW',
       myBlocked: 'BLOCKED BY COMMENTS',
+      building: 'BUILDING',
       failingCI: 'FAILING CI',
       draft: 'DRAFT',
       depReady: 'READY FOR REVIEW',
       depBlocked: 'BLOCKED BY COMMENTS',
+      depBuilding: 'BUILDING',
       depFailing: 'FAILING CI',
     },
     ...defaultCols,
@@ -112,10 +118,12 @@ export const themes: Record<string, ThemeConfig> = {
       readyToMerge: 'Victories Awaiting Claim',
       needsReview: 'Campaigns Seeking Allies',
       myBlocked: 'Campaigns Under Dispute',
+      building: 'Trials In Progress',
       failingCI: 'Failed Trials',
       draft: 'Scrolls in Progress',
       depReady: 'Golem Tasks Ready',
       depBlocked: 'Golem Tasks Disputed',
+      depBuilding: 'Golems Being Forged',
       depFailing: 'Golem Tasks Failed',
     },
     colPR: 'Missive',

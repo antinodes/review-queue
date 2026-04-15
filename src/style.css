@@ -137,13 +137,22 @@ h3:first-child { margin-top: 0; }
 .empty { color: var(--text-muted); font-size: 14px; font-style: italic; padding: 8px 0; }
 
 /* ── Tables ── */
-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 8px; table-layout: fixed; }
 thead th { text-align: left; padding: 6px 12px; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
 tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
 tbody tr:hover { background: var(--surface); }
 tbody td { padding: 8px 12px; vertical-align: middle; }
 td a { color: var(--link); text-decoration: none; font-weight: 600; white-space: nowrap; }
 td a:hover { text-decoration: underline; }
+
+/* ── Column alignment & fixed widths (applies to both th and td) ── */
+#content table .pr-cell { text-align: right; width: 110px; }
+#content table .type-cell { text-align: center; }
+#content table .title-cell { text-align: left; }
+#content table .threads-cell { text-align: right; width: 80px; }
+#content table .ci-cell { text-align: center; width: 100px; }
+#content table .author-cell { text-align: left; width: 140px; }
+#content table .days-cell { text-align: right; width: 70px; }
 
 /* ── Type badges (default) ── */
 .type-cell { width: 52px; padding-right: 0 !important; }
@@ -154,11 +163,58 @@ td a:hover { text-decoration: underline; }
 .type-other { background: rgba(125,133,144,0.1); color: var(--text-muted); }
 
 .title-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.days-cell { white-space: nowrap; color: var(--text-muted); text-align: right; }
-.threads-cell { text-align: right; color: var(--yellow); font-weight: 600; }
+.days-cell { white-space: nowrap; color: var(--text-muted); }
+.threads-cell { color: var(--yellow); font-weight: 600; }
+
+/* ── Branch copy button ── */
+.branch-btn {
+  position: relative;
+  background: none; border: none; padding: 0 0 0 4px;
+  font-size: 13px; line-height: 1; cursor: pointer;
+  color: var(--text-muted); vertical-align: middle;
+  transition: color 0.15s;
+}
+.branch-btn:hover { color: var(--link); }
+.branch-btn.copied { color: var(--green); }
+
+/* Custom tooltip — shows instantly, no browser title-attr delay */
+.branch-btn::after {
+  content: attr(data-branch);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  /* Fixed dark tooltip that contrasts against every theme's page bg */
+  background: #1f2937;
+  color: #f3f4f6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 400;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+.branch-btn:hover::after,
+.branch-btn:focus-visible::after { opacity: 1; visibility: visible; }
+.branch-btn.copied::after { content: 'Copied!'; }
+
+/* ── CI spinner ── */
+.ci-spinner {
+  display: inline-block; width: 10px; height: 10px;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+  vertical-align: middle; margin-right: 3px;
+}
+
+/* ── Building row indicator ── */
+tr.building { box-shadow: inset 3px 0 0 var(--yellow); }
 
 /* ── CI status ── */
-.ci-cell { text-align: center; }
 .ci-pass { color: var(--green); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .ci-fail { color: var(--red); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .ci-pending { color: var(--yellow); font-size: 11px; font-weight: 600; text-transform: uppercase; }
@@ -415,8 +471,8 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
   overflow: hidden;
 }
 [data-theme="rpg"] table { width: 100%; }
-[data-theme="rpg"] td:first-child, [data-theme="rpg"] th:first-child { width: 56px; }
-[data-theme="rpg"] .type-cell { width: 32px !important; }
+[data-theme="rpg"] .pr-cell { width: 56px; }
+[data-theme="rpg"] .type-cell { width: 36px; }
 [data-theme="rpg"] .days-cell { width: 48px; }
 [data-theme="rpg"] .threads-cell { width: 64px; }
 [data-theme="rpg"] .ci-cell { width: 48px; }
@@ -477,7 +533,7 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
   line-height: 1;
   display: inline-block;
 }
-[data-theme="rpg"] .type-cell { width: 36px; text-align: center; }
+[data-theme="rpg"] .type-cell { text-align: center; }
 [data-theme="rpg"] .type-feat { color: #c9952a; background: none; }
 [data-theme="rpg"] .type-fix { color: #c24a0c; background: none; }
 [data-theme="rpg"] .type-build { color: #a89060; background: none; }
