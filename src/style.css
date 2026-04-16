@@ -155,7 +155,7 @@ td a:hover { text-decoration: underline; }
 #content table .days-cell { text-align: right; width: 70px; }
 
 /* ── Type badges (default) ── */
-.type-cell { width: 52px; padding-right: 0 !important; }
+.type-cell { width: 76px; padding-right: 0 !important; }
 .type-badge { display: inline-block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 2px 6px; border-radius: 3px; font-family: ui-monospace, monospace; }
 .type-feat { background: rgba(88,166,255,0.15); color: var(--link); }
 .type-fix { background: rgba(248,81,73,0.15); color: var(--red); }
@@ -341,6 +341,7 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="brutalist"] #last-updated { color: #666; }
 [data-theme="brutalist"] .tab-btn { font-family: 'Arial Black', Arial, sans-serif; font-size: 12px; text-transform: uppercase; border-radius: 0; color: #444; }
 [data-theme="brutalist"] .tab-btn.active { background: #000; color: #fff; border-color: #000; }
+[data-theme="brutalist"] .tab-btn.active:hover { color: #fff; }
 [data-theme="brutalist"] .tab-btn:hover { color: #000; }
 [data-theme="brutalist"] .toolbar { border-bottom: 4px solid #000; }
 
