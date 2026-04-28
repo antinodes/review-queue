@@ -134,8 +134,24 @@ export function renderSummary(container: HTMLElement, text: string): void {
   container.textContent = text
 }
 
-export function renderError(container: HTMLElement, message: string): void {
-  container.textContent = message
+export interface ErrorAction {
+  label: string
+  onClick: () => void
+}
+
+export function renderError(container: HTMLElement, message: string, actions: ErrorAction[] = []): void {
+  container.innerHTML = ''
+  const msg = document.createElement('span')
+  msg.textContent = message
+  container.appendChild(msg)
+  for (const action of actions) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'error-action'
+    btn.textContent = action.label
+    btn.addEventListener('click', action.onClick)
+    container.appendChild(btn)
+  }
   container.classList.remove('hidden')
 }
 

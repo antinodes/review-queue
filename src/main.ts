@@ -167,7 +167,9 @@ async function loadQueue(token: string): Promise<void> {
       return
     }
 
-    renderError($('error'), `Failed to load PRs: ${message}`)
+    renderError($('error'), `Failed to load PRs: ${message}`, [
+      { label: 'Re-enter token', onClick: () => { clearToken(); showTokenPrompt() } },
+    ])
   }
 }
 
