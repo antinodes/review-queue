@@ -69,15 +69,19 @@ you're done.
 
 | Input | Where | Purpose |
 |-------|-------|---------|
-| `GITHUB_CLIENT_ID` / `-c clientId` | deploy env / context | Baked into the Lambda; also used in the frontend build |
-| `GITHUB_CLIENT_SECRET` / `-c clientSecret` | deploy env / context | Lambda env only — never committed |
+| `GITHUB_CLIENT_ID` | deploy env | Baked into the Lambda; also used in the frontend build |
+| `GITHUB_CLIENT_SECRET` | deploy env | Lambda env only — never committed |
 | `VITE_GITHUB_CLIENT_ID` | frontend build | Enables the OAuth flow in the app |
 | `VITE_TOKEN_EXCHANGE_URL` | frontend build | `/auth/exchange` (same-origin) |
+
+Both `GITHUB_*` vars are required — `cdk` commands fail fast at synth rather than
+deploy a Lambda with empty credentials.
 
 ## Teardown
 
 ```bash
-cd infra && npx cdk destroy
+# The synth-time credential check applies to destroy too; any values work here.
+cd infra && GITHUB_CLIENT_ID=x GITHUB_CLIENT_SECRET=x npx cdk destroy
 ```
 
 The bucket has `autoDeleteObjects` + `DESTROY` removal policy, so it empties and

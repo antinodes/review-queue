@@ -39,11 +39,23 @@ export function beginOAuth(): void {
 }
 
 // Returns a token when this page load is an OAuth callback, else null.
-// Throws on CSRF (state mismatch) or exchange failure.
+// Throws on denial, CSRF (state mismatch), or exchange failure.
 export async function handleOAuthCallback(): Promise<string | null> {
   const params = new URLSearchParams(window.location.search)
   const code = params.get('code')
   const state = params.get('state')
+  const error = params.get('error')
+
+  // GitHub redirects back with ?error=... when the user denies access.
+  if (error) {
+    const description = params.get('error_description')
+    sessionStorage.removeItem(STATE_KEY)
+    cleanUrl()
+    throw new Error(
+      error === 'access_denied' ? 'Sign-in was cancelled.' : (description ?? `Sign-in failed (${error})`),
+    )
+  }
+
   if (!code || !state) return null
 
   const expected = sessionStorage.getItem(STATE_KEY)
@@ -66,10 +78,12 @@ async function exchangeCode(code: string): Promise<string> {
   return data.access_token as string
 }
 
-// Strip ?code&state so a refresh doesn't try to re-exchange a used code.
+// Strip the OAuth params so a refresh doesn't re-exchange a used code
+// (or re-show a stale error).
 function cleanUrl(): void {
   const url = new URL(window.location.href)
-  url.searchParams.delete('code')
-  url.searchParams.delete('state')
+  for (const p of ['code', 'state', 'error', 'error_description', 'error_uri']) {
+    url.searchParams.delete(p)
+  }
   window.history.replaceState({}, '', url.toString())
 }

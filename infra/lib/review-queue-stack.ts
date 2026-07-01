@@ -15,9 +15,9 @@ import { Construct } from 'constructs'
 
 export interface ReviewQueueStackProps extends StackProps {
   /** OAuth App client id (public). */
-  clientId?: string
+  clientId: string
   /** OAuth App client secret — set at deploy, never committed. */
-  clientSecret?: string
+  clientSecret: string
 }
 
 /**
@@ -47,8 +47,8 @@ export class ReviewQueueStack extends Stack {
       timeout: Duration.seconds(10),
       memorySize: 128,
       environment: {
-        GITHUB_CLIENT_ID: props.clientId ?? '',
-        GITHUB_CLIENT_SECRET: props.clientSecret ?? '',
+        GITHUB_CLIENT_ID: props.clientId,
+        GITHUB_CLIENT_SECRET: props.clientSecret,
       },
     })
 

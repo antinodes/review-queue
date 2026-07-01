@@ -14,6 +14,8 @@ const $ = (id: string) => document.getElementById(id)!
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let hasLoadedOnce = false
+// Bumped on sign-out so in-flight loadQueue calls discard their results.
+let sessionEpoch = 0
 let activeTheme: ThemeConfig = getTheme()
 let activeTab: 'reviews' | 'myPRs' | 'dependabot' = 'reviews'
 
@@ -39,9 +41,15 @@ function hideAuthPrompt(): void {
 }
 
 function signOut(): void {
+  sessionEpoch++
   clearToken()
   if (refreshTimer) clearInterval(refreshTimer)
   updateBadge(0)
+  hasLoadedOnce = false
+  cachedReviews = null
+  cachedMyPRs = null
+  cachedDependabot = null
+  $('error').classList.add('hidden')
   showAuthPrompt()
 }
 
@@ -131,6 +139,7 @@ async function fetchDetails(token: string, prs: SearchPR[], viewerLogin: string)
 }
 
 async function loadQueue(token: string): Promise<void> {
+  const epoch = sessionEpoch
   $('error').classList.add('hidden')
 
   if (hasLoadedOnce) {
@@ -156,12 +165,14 @@ async function loadQueue(token: string): Promise<void> {
     const allPRs = [...reviewPRs, ...authoredPRs]
     const detailsByRepo = await fetchDetails(token, allPRs, viewerLogin)
 
+    $('loading').classList.add('hidden')
+    $('progress-bar').classList.remove('active')
+    if (epoch !== sessionEpoch) return // signed out mid-fetch — discard
+
     cachedReviews = classifyReviewPRs(humanReviewPRs, detailsByRepo)
     cachedMyPRs = classifyMyPRs(authoredPRs, detailsByRepo)
     cachedDependabot = classifyDependabotPRs(dependabotPRs, detailsByRepo)
 
-    $('loading').classList.add('hidden')
-    $('progress-bar').classList.remove('active')
     $('content').classList.remove('hidden')
     hasLoadedOnce = true
 
@@ -171,16 +182,19 @@ async function loadQueue(token: string): Promise<void> {
   } catch (err) {
     $('loading').classList.add('hidden')
     $('progress-bar').classList.remove('active')
+    if (epoch !== sessionEpoch) return // signed out mid-fetch — discard
     const message = err instanceof Error ? err.message : 'Unknown error'
 
     if (message.includes('401')) {
-      clearToken()
-      showAuthPrompt()
+      signOut()
       renderError($('error'), 'Session expired — sign in again.')
       return
     }
 
     renderError($('error'), `Failed to load PRs: ${message}`)
+    // With no content on screen the toolbar (refresh/sign-out) is hidden too;
+    // re-show the prompt so the user has a way to retry.
+    if (!hasLoadedOnce) showAuthPrompt()
   }
 }
 
@@ -247,6 +261,13 @@ function initThemePicker(): void {
   }
 }
 
+// The one path into a signed-in session, whatever produced the token.
+function enterApp(token: string): void {
+  hideAuthPrompt()
+  loadQueue(token)
+  startAutoRefresh(token)
+}
+
 // Runs the OAuth callback (if this load is one), then loads the queue or shows
 // the prompt. Callback handling must precede the token check so a fresh sign-in
 // is picked up on the same page load.
@@ -259,13 +280,8 @@ async function startup(): Promise<void> {
   }
 
   const token = getToken()
-  if (token) {
-    hideAuthPrompt()
-    loadQueue(token)
-    startAutoRefresh(token)
-  } else {
-    showAuthPrompt()
-  }
+  if (token) enterApp(token)
+  else showAuthPrompt()
 }
 
 // Init
@@ -297,9 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!token) return
       saveToken(token)
       tokenInput.value = ''
-      hideAuthPrompt()
-      loadQueue(token)
-      startAutoRefresh(token)
+      enterApp(token)
     })
   }
 

@@ -54,14 +54,14 @@ body {
 .controls { display: flex; align-items: center; gap: 12px; }
 #last-updated { font-size: 12px; color: var(--text-muted); }
 
-#refresh-btn {
+#refresh-btn, #signout-btn {
   display: flex; align-items: center; justify-content: center;
   width: 32px; height: 32px;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); color: var(--text-muted);
   cursor: pointer; transition: color 0.15s, border-color 0.15s;
 }
-#refresh-btn:hover { color: var(--text); border-color: var(--text-muted); }
+#refresh-btn:hover, #signout-btn:hover { color: var(--text); border-color: var(--text-muted); }
 
 /* ── Theme picker ── */
 .theme-picker { display: flex; gap: 4px; }
@@ -132,15 +132,6 @@ body {
   font-size: 14px; font-weight: 600; cursor: pointer;
 }
 .signin-btn:hover { opacity: 0.9; }
-
-#signout-btn {
-  display: flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); color: var(--text-muted);
-  cursor: pointer; transition: color 0.15s, border-color 0.15s;
-}
-#signout-btn:hover { color: var(--text); border-color: var(--text-muted); }
 
 /* ── Loading / Error ── */
 .loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px; color: var(--text-muted); font-size: 14px; }
@@ -348,8 +339,8 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="brutalist"] .threads-cell { color: #ff0000; font-weight: 700; }
 [data-theme="brutalist"] .days-cell { color: #444; font-weight: 600; }
 [data-theme="brutalist"] footer { border-top: 4px solid #000; font-family: 'Arial Black', Arial, sans-serif; font-size: 12px; color: #000; padding-top: 12px; }
-[data-theme="brutalist"] #refresh-btn { background: #fff; border: 3px solid #000; border-radius: 0; color: #000; }
-[data-theme="brutalist"] #refresh-btn:hover { background: #000; color: #fff; }
+[data-theme="brutalist"] #refresh-btn, [data-theme="brutalist"] #signout-btn { background: #fff; border: 3px solid #000; border-radius: 0; color: #000; }
+[data-theme="brutalist"] #refresh-btn:hover, [data-theme="brutalist"] #signout-btn:hover { background: #000; color: #fff; }
 [data-theme="brutalist"] .theme-btn { border-radius: 0; border-width: 2px; border-color: #000; color: #000; font-family: 'Courier New', monospace; font-weight: 700; }
 [data-theme="brutalist"] .theme-btn.active { background: #000; color: #fff; border-color: #000; }
 [data-theme="brutalist"] .theme-btn:hover { background: #f0f0f0; }
@@ -438,8 +429,8 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="newspaper"] .threads-cell { color: #8b0000; }
 [data-theme="newspaper"] .days-cell { color: #6b5e4f; }
 [data-theme="newspaper"] footer { border-top: 2px solid #1a1a1a; font-size: 12px; color: #6b5e4f; font-family: 'Source Sans 3', sans-serif; }
-[data-theme="newspaper"] #refresh-btn { background: transparent; border: 1px solid #c8bfa8; color: #6b5e4f; border-radius: 0; }
-[data-theme="newspaper"] #refresh-btn:hover { color: #1a1a1a; border-color: #1a1a1a; }
+[data-theme="newspaper"] #refresh-btn, [data-theme="newspaper"] #signout-btn { background: transparent; border: 1px solid #c8bfa8; color: #6b5e4f; border-radius: 0; }
+[data-theme="newspaper"] #refresh-btn:hover, [data-theme="newspaper"] #signout-btn:hover { color: #1a1a1a; border-color: #1a1a1a; }
 [data-theme="newspaper"] .theme-btn { border-radius: 0; font-family: 'Source Sans 3', sans-serif; color: #6b5e4f; border-color: #c8bfa8; }
 [data-theme="newspaper"] .theme-btn.active { color: #1a1a1a; border-color: #8b0000; background: rgba(139,0,0,0.06); }
 [data-theme="newspaper"] .token-prompt { background: #ebe6dc; border: 1px solid #c8bfa8; border-radius: 0; }
@@ -583,13 +574,13 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
   padding: 1rem 0;
   letter-spacing: 0.05em;
 }
-[data-theme="rpg"] #refresh-btn {
+[data-theme="rpg"] #refresh-btn, [data-theme="rpg"] #signout-btn {
   background: linear-gradient(180deg, #c9a44a 0%, #8a6010 100%);
   border: 2px solid #8a6010;
   color: #1a0e02;
   border-radius: 3px;
 }
-[data-theme="rpg"] #refresh-btn:hover { filter: brightness(1.25); color: #1a0e02; border-color: #8a6010; }
+[data-theme="rpg"] #refresh-btn:hover, [data-theme="rpg"] #signout-btn:hover { filter: brightness(1.25); color: #1a0e02; border-color: #8a6010; }
 [data-theme="rpg"] .theme-btn {
   font-family: 'Cinzel', serif;
   border-color: #5a3e0a;

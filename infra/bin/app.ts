@@ -2,12 +2,18 @@
 import * as cdk from 'aws-cdk-lib'
 import { ReviewQueueStack } from '../lib/review-queue-stack'
 
-const app = new cdk.App()
-
 // OAuth App credentials. The client id is public; the secret must never be
-// committed — pass both via `-c` context or environment variables at deploy.
-const clientId = app.node.tryGetContext('clientId') ?? process.env.GITHUB_CLIENT_ID
-const clientSecret = app.node.tryGetContext('clientSecret') ?? process.env.GITHUB_CLIENT_SECRET
+// committed — pass both as environment variables at deploy time.
+const clientId = process.env.GITHUB_CLIENT_ID
+const clientSecret = process.env.GITHUB_CLIENT_SECRET
+if (!clientId || !clientSecret) {
+  throw new Error(
+    'Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET before running cdk (see infra/README.md). ' +
+      'Deploying without them would ship a Lambda whose every token exchange fails.',
+  )
+}
+
+const app = new cdk.App()
 
 new ReviewQueueStack(app, 'ReviewQueue', {
   env: {

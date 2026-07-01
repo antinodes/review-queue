@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 No test suite, no linter. TypeScript strict-ish flags (`noUnusedLocals`, `noUnusedParameters`, `erasableSyntaxOnly`) run via `tsc --noEmit` during build.
 
-Deployment is automated: push to `main` triggers `.github/workflows/deploy.yml`, which builds with `--base /review-queue/` and publishes to GitHub Pages.
+Deployment: the CDK stack in `infra/` hosts the app on S3 + CloudFront with the OAuth token-exchange Lambda (see `infra/README.md`). Any static host also works in PAT-only mode. There is deliberately one deploy path — do not reintroduce a parallel GitHub Pages workflow; the OAuth `redirect_uri` derives from the build's `BASE_URL`, so a second host with a different base breaks sign-in.
 
 ## Architecture
 
