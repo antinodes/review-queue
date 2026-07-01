@@ -122,6 +122,26 @@ body {
 }
 #token-form button:hover { opacity: 0.9; }
 
+/* ── OAuth sign-in ── */
+.oauth-section { display: flex; flex-direction: column; gap: 10px; }
+.signin-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 10px 16px;
+  background: var(--green); color: var(--bg);
+  border: none; border-radius: var(--radius);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.signin-btn:hover { opacity: 0.9; }
+
+#signout-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text-muted);
+  cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+#signout-btn:hover { color: var(--text); border-color: var(--text-muted); }
+
 /* ── Loading / Error ── */
 .loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px; color: var(--text-muted); font-size: 14px; }
 .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--link); border-radius: 50%; animation: spin 0.8s linear infinite; }

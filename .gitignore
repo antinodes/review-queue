@@ -1,3 +1,13 @@
 node_modules
 dist
 .DS_Store
+ai-docs/
+
+# Local env (secrets / build config)
+.env
+.env.local
+.env.*.local
+
+# CDK build artifacts
+infra/cdk.out
+infra/node_modules
