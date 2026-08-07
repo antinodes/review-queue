@@ -24,7 +24,9 @@ github.ts         → classify.ts            → render.ts
 
 **`main.ts`** owns lifecycle: token prompt → fetch → classify → render → 3-minute auto-refresh. Caches `cachedReviews`/`cachedMyPRs`/`cachedDependabot` so theme and tab switches re-render from memory without refetching.
 
-**`github.ts`** makes exactly three fetches per refresh cycle: `searchReviewRequested`, `searchAuthored`, `fetchViewerLogin` (run in parallel). Then one batched GraphQL query **per repo** that packs all PR numbers into aliased fragments (`pr123: pullRequest(number: 123) {...}`). Adding a new GraphQL field? Add it to `buildPRFragment` and the `RawPRDetail`/`PRDetail` types — the mapping in `fetchPRDetails` is hand-written, not generated.
+**`github.ts`** opens each refresh cycle with four parallel fetches: `searchReviewRequested`, `searchAuthored`, `searchMergedAuthored`, `fetchViewerLogin`. Then one batched GraphQL query **per repo** that packs all PR numbers into aliased fragments (`pr123: pullRequest(number: 123) {...}`). Adding a new GraphQL field? Add it to `buildPRFragment` and the `RawPRDetail`/`PRDetail` types — the mapping in `fetchPRDetails` is hand-written, not generated. All GraphQL goes through the shared `graphql<T>()` helper, which owns the POST, the HTTP check, and the `errors[]` check.
+
+The merged section costs more on top of that: `fetchRepoDeployments` (paginated, capped at 10 pages) per repo with merged PRs, plus one `isAncestor` compare call per PR-per-environment and per candidate release until a version matches. `computePRMetadata` memoizes those compares **within** a cycle but not across cycles, and `loadQueue` awaits it before first paint. Both are worth revisiting if the request volume becomes a problem.
 
 **`classify.ts`** has three independent classifiers. They share `buildClassified` and differ only in bucket rules:
 - `classifyReviewPRs` — drops PRs the viewer has already APPROVED, drops non-SUCCESS CI, splits SUCCESS PRs into `ready` vs `blocked` (unresolved threads).

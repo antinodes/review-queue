@@ -1,7 +1,7 @@
-import { searchReviewRequested, searchAuthored, fetchPRDetails, fetchViewerLogin } from './github.ts'
-import type { SearchPR } from './github.ts'
-import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, isDependabot } from './classify.ts'
-import type { ReviewResult, MyPRsResult, DependabotResult } from './classify.ts'
+import { searchReviewRequested, searchAuthored, searchMergedAuthored, fetchPRDetails, fetchRepoDeployments, fetchViewerLogin, isAncestor, isReleaseDeploy, releaseVersion } from './github.ts'
+import type { SearchPR, RepoDeployment, PRDetail } from './github.ts'
+import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, classifyMergedPRs, isDependabot, lastBusinessDayCutoff } from './classify.ts'
+import type { ReviewResult, MyPRsResult, DependabotResult, PRMergedMetadata } from './classify.ts'
 import { renderSection, renderSummary, renderError } from './render.ts'
 import { getToken, saveToken, clearToken } from './token.ts'
 import { beginOAuth, handleOAuthCallback, oauthEnabled, patEnabled } from './auth.ts'
@@ -88,15 +88,18 @@ function renderActiveTab(): void {
     setText('my-building-h', t.sections.building)
     setText('my-failing-h', t.sections.failingCI)
     setText('my-draft-h', t.sections.draft)
+    setText('my-merged-h', t.sections.recentlyMerged)
     renderSection($('my-ready'), m.readyToMerge, t, { showAuthor: false })
     renderSection($('my-needsReview'), m.needsReview, t, { showAuthor: false })
     renderSection($('my-blocked'), m.blocked, t, { showThreads: true, showAuthor: false })
     renderSection($('my-building'), m.building, t, { showCI: true, showAuthor: false })
     renderSection($('my-failing'), m.failing, t, { showCI: true, showAuthor: false })
     renderSection($('my-draft'), m.drafts, t, { showAuthor: false })
+    renderSection($('my-merged'), m.recentlyMerged, t, { showAuthor: false, showBaseBranch: true, showDeployedEnvs: true, showVersion: true, mergedColumn: true })
     const total = m.readyToMerge.length + m.needsReview.length + m.blocked.length + m.building.length + m.failing.length + m.drafts.length
+    const mergedSuffix = m.recentlyMerged.length > 0 ? ` · ${m.recentlyMerged.length} recently merged` : ''
     renderSummary($('my-summary'),
-      `${total} open — ${m.readyToMerge.length} ready to merge, ${m.needsReview.length} needs review, ${m.blocked.length} blocked, ${m.building.length} building, ${m.failing.length} failing, ${m.drafts.length} draft`)
+      `${total} open — ${m.readyToMerge.length} ready to merge, ${m.needsReview.length} needs review, ${m.blocked.length} blocked, ${m.building.length} building, ${m.failing.length} failing, ${m.drafts.length} draft${mergedSuffix}`)
   }
 
   if (activeTab === 'dependabot' && cachedDependabot) {
@@ -138,6 +141,106 @@ async function fetchDetails(token: string, prs: SearchPR[], viewerLogin: string)
   return new Map(entries)
 }
 
+interface EnvTip { env: string; sha: string; createdAt: string }
+interface VersionedDeploy { version: string; sha: string; createdAt: string }
+
+interface RepoReleaseIndex {
+  envTips: EnvTip[]
+  versionedAsc: VersionedDeploy[]
+}
+
+// Ascending order makes the last write per env the newest.
+function indexReleases(deploys: RepoDeployment[]): RepoReleaseIndex {
+  const releases = deploys
+    .filter(isReleaseDeploy)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+
+  const latestByEnv = new Map<string, { sha: string; createdAt: string }>()
+  for (const d of releases) latestByEnv.set(d.environment, { sha: d.commitOid, createdAt: d.createdAt })
+
+  return {
+    envTips: [...latestByEnv.entries()].map(([env, v]) => ({ env, ...v })),
+    versionedAsc: releases.flatMap((d) => {
+      const version = releaseVersion(d)
+      return version ? [{ version, sha: d.commitOid, createdAt: d.createdAt }] : []
+    }),
+  }
+}
+
+type AncestryCheck = (repo: string, base: string, head: string) => Promise<boolean>
+
+async function attributeEnvs(
+  repo: string,
+  mergeCommitOid: string,
+  envTips: EnvTip[],
+  check: AncestryCheck,
+): Promise<string[]> {
+  const hits = await Promise.all(
+    envTips.map(async (tip) => (await check(repo, mergeCommitOid, tip.sha)) ? tip : null),
+  )
+  return hits
+    .filter((t): t is EnvTip => t !== null)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((t) => t.env)
+}
+
+// Sequential, not parallel: the first hit wins, so later checks would be wasted.
+async function firstShippedVersion(
+  repo: string,
+  mergeCommitOid: string,
+  mergedAt: string,
+  versionedAsc: VersionedDeploy[],
+  check: AncestryCheck,
+): Promise<string | null> {
+  const seenShas = new Set<string>()
+  for (const d of versionedAsc) {
+    if (d.createdAt < mergedAt || seenShas.has(d.sha)) continue
+    seenShas.add(d.sha)
+    if (await check(repo, mergeCommitOid, d.sha)) return d.version
+  }
+  return null
+}
+
+function memoizedAncestryCheck(token: string): AncestryCheck {
+  const cache = new Map<string, Promise<boolean>>()
+  return (repo, base, head) => {
+    const key = `${repo}|${base}|${head}`
+    let p = cache.get(key)
+    if (!p) {
+      p = isAncestor(token, repo, base, head).catch(() => false)
+      cache.set(key, p)
+    }
+    return p
+  }
+}
+
+// Ancestry-based attribution (not timestamp): rollback/cherry-pick deploys would otherwise false-positive.
+async function computePRMetadata(
+  token: string,
+  mergedPRs: SearchPR[],
+  detailsByRepo: Map<string, PRDetail[]>,
+  deploymentsByRepo: Map<string, RepoDeployment[]>,
+): Promise<Map<string, PRMergedMetadata>> {
+  const check = memoizedAncestryCheck(token)
+  const indexByRepo = new Map(
+    [...deploymentsByRepo].map(([repo, deploys]) => [repo, indexReleases(deploys)] as const),
+  )
+
+  const result = new Map<string, PRMergedMetadata>()
+  await Promise.all(mergedPRs.map(async (pr) => {
+    const detail = detailsByRepo.get(pr.repo)?.find((d) => d.number === pr.number)
+    if (!detail?.mergeCommitOid || !detail.mergedAt) return
+
+    const index = indexByRepo.get(pr.repo) ?? { envTips: [], versionedAsc: [] }
+    const [envs, version] = await Promise.all([
+      attributeEnvs(pr.repo, detail.mergeCommitOid, index.envTips, check),
+      firstShippedVersion(pr.repo, detail.mergeCommitOid, detail.mergedAt, index.versionedAsc, check),
+    ])
+    result.set(`${pr.repo}#${pr.number}`, { envs, version })
+  }))
+  return result
+}
+
 async function loadQueue(token: string): Promise<void> {
   const epoch = sessionEpoch
   $('error').classList.add('hidden')
@@ -150,10 +253,11 @@ async function loadQueue(token: string): Promise<void> {
   }
 
   try {
-    // Fetch review-requested, authored PRs, and viewer login in parallel
-    const [reviewPRs, authoredPRs, viewerLogin] = await Promise.all([
+    const cutoff = lastBusinessDayCutoff()
+    const [reviewPRs, authoredPRs, mergedPRs, viewerLogin] = await Promise.all([
       searchReviewRequested(token),
       searchAuthored(token),
+      searchMergedAuthored(token, cutoff),
       fetchViewerLogin(token),
     ])
 
@@ -162,8 +266,22 @@ async function loadQueue(token: string): Promise<void> {
     const dependabotPRs = reviewPRs.filter(isDependabot)
 
     // Collect all unique PRs for GraphQL batching
-    const allPRs = [...reviewPRs, ...authoredPRs]
+    const allPRs = [...reviewPRs, ...authoredPRs, ...mergedPRs]
     const detailsByRepo = await fetchDetails(token, allPRs, viewerLogin)
+
+    const mergedRepos = [...new Set(mergedPRs.map((p) => p.repo))]
+    const deploymentsByRepo = new Map<string, RepoDeployment[]>(
+      await Promise.all(
+        mergedRepos.map(async (repo) => {
+          try { return [repo, await fetchRepoDeployments(token, repo, cutoff.getTime())] as const }
+          catch (err) {
+            console.warn(`Failed to fetch deployments for ${repo}:`, err)
+            return [repo, [] as RepoDeployment[]] as const
+          }
+        }),
+      ),
+    )
+    const metadataByPR = await computePRMetadata(token, mergedPRs, detailsByRepo, deploymentsByRepo)
 
     $('loading').classList.add('hidden')
     $('progress-bar').classList.remove('active')
@@ -171,6 +289,7 @@ async function loadQueue(token: string): Promise<void> {
 
     cachedReviews = classifyReviewPRs(humanReviewPRs, detailsByRepo)
     cachedMyPRs = classifyMyPRs(authoredPRs, detailsByRepo)
+    cachedMyPRs.recentlyMerged = classifyMergedPRs(mergedPRs, detailsByRepo, cutoff.getTime(), metadataByPR)
     cachedDependabot = classifyDependabotPRs(dependabotPRs, detailsByRepo)
 
     $('content').classList.remove('hidden')

@@ -15,6 +15,7 @@ export interface SectionLabels {
   building: string
   failingCI: string
   draft: string
+  recentlyMerged: string
   // Dependabot tab
   depReady: string
   depBlocked: string
@@ -33,6 +34,10 @@ export interface ThemeConfig {
   colOpen: string
   colThreads: string
   colCI: string
+  colBase: string
+  colMerged: string
+  colDeployed: string
+  colVersion: string
   typeLabels: Record<string, string>
   typeIconMode: 'badge' | 'rpg-awesome'
   threadBadgeFn?: (count: number) => string
@@ -49,6 +54,7 @@ const defaultSections: SectionLabels = {
   building: 'Building',
   failingCI: 'Failing CI',
   draft: 'Draft',
+  recentlyMerged: 'Recently Merged',
   depReady: 'Ready for Review',
   depBlocked: 'Blocked by Comments',
   depBuilding: 'Building',
@@ -64,6 +70,7 @@ const defaultTypeLabels: Record<string, string> = {
 const defaultCols = {
   colPR: 'PR', colTitle: 'Title', colAuthor: 'Author',
   colOpen: 'Open', colThreads: 'Threads', colCI: 'CI',
+  colBase: 'Merged Into', colMerged: 'Merged', colDeployed: 'Deployed', colVersion: 'Version',
 }
 
 export const themes: Record<string, ThemeConfig> = {
@@ -81,6 +88,7 @@ export const themes: Record<string, ThemeConfig> = {
       building: 'BUILDING',
       failingCI: 'FAILING CI',
       draft: 'DRAFT',
+      recentlyMerged: 'RECENTLY MERGED',
       depReady: 'READY FOR REVIEW',
       depBlocked: 'BLOCKED BY COMMENTS',
       depBuilding: 'BUILDING',
@@ -121,6 +129,7 @@ export const themes: Record<string, ThemeConfig> = {
       building: 'Trials In Progress',
       failingCI: 'Failed Trials',
       draft: 'Scrolls in Progress',
+      recentlyMerged: 'Recent Conquests',
       depReady: 'Golem Tasks Ready',
       depBlocked: 'Golem Tasks Disputed',
       depBuilding: 'Golems Being Forged',
@@ -132,6 +141,10 @@ export const themes: Record<string, ThemeConfig> = {
     colOpen: 'Aged',
     colThreads: 'Hazard',
     colCI: 'Trial',
+    colBase: 'Sealed Into',
+    colMerged: 'Claimed',
+    colDeployed: 'Realms',
+    colVersion: 'Sigil',
     typeLabels: {
       feat: 'Venture', fix: 'Mend', build: 'Forge', chore: 'Forge',
       refactor: 'Reshape', test: 'Trial', docs: 'Lore', ci: 'Forge',

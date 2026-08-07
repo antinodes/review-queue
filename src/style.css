@@ -12,6 +12,7 @@
   --green: #3fb950;
   --yellow: #d29922;
   --red: #f85149;
+  --merged: #8957e5;
   --radius: 6px;
 }
 
@@ -165,7 +166,10 @@ td a:hover { text-decoration: underline; }
 #content table .threads-cell { text-align: right; width: 80px; }
 #content table .ci-cell { text-align: center; width: 100px; }
 #content table .author-cell { text-align: left; width: 140px; }
-#content table .days-cell { text-align: right; width: 70px; }
+#content table .base-cell { text-align: left; width: 100px; }
+#content table .deployed-cell { text-align: left; width: 170px; }
+#content table .version-cell { text-align: left; width: 90px; }
+#content table .days-cell { text-align: right; width: 90px; }
 
 /* ── Type badges (default) ── */
 .type-cell { width: 76px; padding-right: 0 !important; }
@@ -227,6 +231,23 @@ td a:hover { text-decoration: underline; }
 /* ── Building row indicator ── */
 tr.building { box-shadow: inset 3px 0 0 var(--yellow); }
 
+/* ── Merged row indicator ── */
+tr.merged { box-shadow: inset 3px 0 0 var(--merged); opacity: 0.78; }
+tr.merged:hover { opacity: 1; }
+.base-cell { color: var(--text-muted); font-size: 12px; }
+.deployed-cell { font-size: 11px; }
+.env-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.env-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text);
+  font-size: 11px; font-weight: 500;
+  text-decoration: none;
+}
+.env-chip:hover { border-color: var(--text-muted); color: var(--link); }
+.env-empty { color: var(--text-muted); }
+.version-cell { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
 /* ── CI status ── */
 .ci-pass { color: var(--green); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .ci-fail { color: var(--red); font-size: 11px; font-weight: 600; text-transform: uppercase; }
@@ -259,6 +280,7 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
   --green: #22c55e;
   --yellow: #eab308;
   --red: #ef4444;
+  --merged: #8b5cf6;
   --radius: 5px;
 }
 [data-theme="dense"] body { font-size: 12px; }
@@ -288,6 +310,7 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
   --green: #000000;
   --yellow: #ff0000;
   --red: #ff0000;
+  --merged: #0000ff;
   --radius: 0;
 }
 [data-theme="brutalist"] body {
@@ -373,6 +396,7 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
   --green: #2d5a27;
   --yellow: #8b6914;
   --red: #8b0000;
+  --merged: #4b0082;
   --radius: 0;
 }
 [data-theme="newspaper"] body {
@@ -460,6 +484,7 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
   --green: #a8b820;
   --yellow: #c9952a;
   --red: #8b1a1a;
+  --merged: #6b4c9a;
   --radius: 2px;
 }
 [data-theme="rpg"] body {
@@ -487,11 +512,14 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="rpg"] table { width: 100%; }
 [data-theme="rpg"] .pr-cell { width: 56px; }
 [data-theme="rpg"] .type-cell { width: 36px; }
-[data-theme="rpg"] .days-cell { width: 48px; }
+[data-theme="rpg"] .days-cell { width: 90px; }
 [data-theme="rpg"] .threads-cell { width: 64px; }
 [data-theme="rpg"] .ci-cell { width: 48px; }
-[data-theme="rpg"] .title-cell { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-theme="rpg"] .title-cell { width: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-theme="rpg"] .author-cell { width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-theme="rpg"] .base-cell { width: 100px; }
+[data-theme="rpg"] .deployed-cell { width: 170px; }
+[data-theme="rpg"] .version-cell { width: 90px; }
 /* Corner ornaments */
 [data-theme="rpg"] section::before,
 [data-theme="rpg"] section::after {
