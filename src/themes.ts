@@ -32,12 +32,12 @@ export interface ThemeConfig {
   colTitle: string
   colAuthor: string
   colOpen: string
-  colThreads: string
   colCI: string
   colBase: string
   colMerged: string
   colDeployed: string
   colVersion: string
+  colReason: string
   typeLabels: Record<string, string>
   typeIconMode: 'badge' | 'rpg-awesome'
   threadBadgeFn?: (count: number) => string
@@ -47,16 +47,16 @@ const defaultTabs: TabLabels = { reviews: 'Reviews', myPRs: 'My PRs', dependabot
 
 const defaultSections: SectionLabels = {
   ready: 'Ready for Review',
-  blocked: 'Blocked by Comments',
+  blocked: 'Blocked',
   readyToMerge: 'Ready to Merge',
   needsReview: 'Needs Review',
-  myBlocked: 'Blocked by Comments',
+  myBlocked: 'Blocked',
   building: 'Building',
   failingCI: 'Failing CI',
   draft: 'Draft',
   recentlyMerged: 'Recently Merged',
   depReady: 'Ready for Review',
-  depBlocked: 'Blocked by Comments',
+  depBlocked: 'Blocked',
   depBuilding: 'Building',
   depFailing: 'Failing CI',
 }
@@ -69,8 +69,8 @@ const defaultTypeLabels: Record<string, string> = {
 
 const defaultCols = {
   colPR: 'PR', colTitle: 'Title', colAuthor: 'Author',
-  colOpen: 'Open', colThreads: 'Threads', colCI: 'CI',
-  colBase: 'Merged Into', colMerged: 'Merged', colDeployed: 'Deployed', colVersion: 'Version',
+  colOpen: 'Open', colCI: 'CI',
+  colBase: 'Merged Into', colMerged: 'Merged', colDeployed: 'Deployed', colVersion: 'Version', colReason: 'Reason',
 }
 
 export const themes: Record<string, ThemeConfig> = {
@@ -81,16 +81,16 @@ export const themes: Record<string, ThemeConfig> = {
     sections: {
       ...defaultSections,
       ready: 'READY FOR REVIEW',
-      blocked: 'BLOCKED BY COMMENTS',
+      blocked: 'BLOCKED',
       readyToMerge: 'READY TO MERGE',
       needsReview: 'NEEDS REVIEW',
-      myBlocked: 'BLOCKED BY COMMENTS',
+      myBlocked: 'BLOCKED',
       building: 'BUILDING',
       failingCI: 'FAILING CI',
       draft: 'DRAFT',
       recentlyMerged: 'RECENTLY MERGED',
       depReady: 'READY FOR REVIEW',
-      depBlocked: 'BLOCKED BY COMMENTS',
+      depBlocked: 'BLOCKED',
       depBuilding: 'BUILDING',
       depFailing: 'FAILING CI',
     },
@@ -122,16 +122,16 @@ export const themes: Record<string, ThemeConfig> = {
     tabs: { reviews: 'Quest Board', myPRs: 'My Campaigns', dependabot: 'Golem Work' },
     sections: {
       ready: 'Quests Awaiting Champions',
-      blocked: 'Contested Quests — Disputes Unresolved',
+      blocked: 'Contested Quests',
       readyToMerge: 'Victories Awaiting Claim',
       needsReview: 'Campaigns Seeking Allies',
-      myBlocked: 'Campaigns Under Dispute',
+      myBlocked: 'Contested Campaigns',
       building: 'Trials In Progress',
       failingCI: 'Failed Trials',
       draft: 'Scrolls in Progress',
       recentlyMerged: 'Recent Conquests',
       depReady: 'Golem Tasks Ready',
-      depBlocked: 'Golem Tasks Disputed',
+      depBlocked: 'Contested Golem Tasks',
       depBuilding: 'Golems Being Forged',
       depFailing: 'Golem Tasks Failed',
     },
@@ -139,12 +139,12 @@ export const themes: Record<string, ThemeConfig> = {
     colTitle: 'Quest Scroll',
     colAuthor: 'Petitioner',
     colOpen: 'Aged',
-    colThreads: 'Hazard',
     colCI: 'Trial',
     colBase: 'Sealed Into',
     colMerged: 'Claimed',
     colDeployed: 'Realms',
     colVersion: 'Sigil',
+    colReason: 'Strife',
     typeLabels: {
       feat: 'Venture', fix: 'Mend', build: 'Forge', chore: 'Forge',
       refactor: 'Reshape', test: 'Trial', docs: 'Lore', ci: 'Forge',

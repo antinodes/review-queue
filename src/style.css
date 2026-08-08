@@ -163,12 +163,12 @@ td a:hover { text-decoration: underline; }
 #content table .pr-cell { text-align: right; width: 110px; }
 #content table .type-cell { text-align: center; }
 #content table .title-cell { text-align: left; }
-#content table .threads-cell { text-align: right; width: 80px; }
 #content table .ci-cell { text-align: center; width: 100px; }
 #content table .author-cell { text-align: left; width: 140px; }
 #content table .base-cell { text-align: left; width: 100px; }
 #content table .deployed-cell { text-align: left; width: 170px; }
 #content table .version-cell { text-align: left; width: 90px; }
+#content table .reason-cell { text-align: left; width: 180px; }
 #content table .days-cell { text-align: right; width: 90px; }
 
 /* ── Type badges (default) ── */
@@ -181,7 +181,6 @@ td a:hover { text-decoration: underline; }
 
 .title-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .days-cell { white-space: nowrap; color: var(--text-muted); }
-.threads-cell { color: var(--yellow); font-weight: 600; }
 
 /* ── Branch copy button ── */
 .branch-btn {
@@ -234,24 +233,37 @@ tr.building { box-shadow: inset 3px 0 0 var(--yellow); }
 /* ── Merged row indicator ── */
 tr.merged { box-shadow: inset 3px 0 0 var(--merged); opacity: 0.78; }
 tr.merged:hover { opacity: 1; }
-.base-cell { color: var(--text-muted); font-size: 12px; }
+/* nowrap links overflow a fixed-layout cell unless it clips; long branches spill into Open. */
+.base-cell { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deployed-cell { font-size: 11px; }
-.env-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.env-chip {
+.env-chips, .state-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.env-chip, .state-pill {
   padding: 1px 6px;
   border: 1px solid var(--border); border-radius: 10px;
-  background: var(--surface); color: var(--text);
+  background: var(--surface);
   font-size: 11px; font-weight: 500;
-  text-decoration: none;
 }
+.env-chip { color: var(--text); text-decoration: none; }
 .env-chip:hover { border-color: var(--text-muted); color: var(--link); }
 .env-empty { color: var(--text-muted); }
 .version-cell { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.state-pill { white-space: nowrap; }
+.state-pill.conflicts { color: var(--red); border-color: var(--red); text-decoration: none; }
+a.state-pill.conflicts:hover { text-decoration: underline; }
+.title-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.inline-pill { flex-shrink: 0; }
+.state-pill.threads { color: var(--yellow); border-color: var(--yellow); }
+.state-pill.waiting { color: var(--link); border-color: var(--link); text-decoration: none; }
+a.state-pill.waiting:hover { text-decoration: underline; }
+a.thread-link { text-decoration: none; color: inherit; }
+a.thread-link:hover { text-decoration: underline; }
 
 /* ── CI status ── */
 .ci-pass { color: var(--green); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .ci-fail { color: var(--red); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .ci-pending { color: var(--yellow); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.ci-none { color: var(--text-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .ci-unknown { color: var(--text-muted); }
 
 /* ── Summary ── */
@@ -361,7 +373,6 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="brutalist"] .type-fix { background: #ff0000; color: #fff; }
 [data-theme="brutalist"] .type-build { background: #888; color: #fff; }
 [data-theme="brutalist"] .type-other { background: #888; color: #fff; }
-[data-theme="brutalist"] .threads-cell { color: #ff0000; font-weight: 700; }
 [data-theme="brutalist"] .days-cell { color: #444; font-weight: 600; }
 [data-theme="brutalist"] footer { border-top: 4px solid #000; font-family: 'Arial Black', Arial, sans-serif; font-size: 12px; color: #000; padding-top: 12px; }
 [data-theme="brutalist"] #refresh-btn, [data-theme="brutalist"] #signout-btn { background: #fff; border: 3px solid #000; border-radius: 0; color: #000; }
@@ -452,7 +463,6 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="newspaper"] .type-fix { background: none; color: #8b0000; }
 [data-theme="newspaper"] .type-build { background: none; color: #8a7e6e; }
 [data-theme="newspaper"] .type-other { background: none; color: #8a7e6e; }
-[data-theme="newspaper"] .threads-cell { color: #8b0000; }
 [data-theme="newspaper"] .days-cell { color: #6b5e4f; }
 [data-theme="newspaper"] footer { border-top: 2px solid #1a1a1a; font-size: 12px; color: #6b5e4f; font-family: 'Source Sans 3', sans-serif; }
 [data-theme="newspaper"] #refresh-btn, [data-theme="newspaper"] #signout-btn { background: transparent; border: 1px solid #c8bfa8; color: #6b5e4f; border-radius: 0; }
@@ -513,13 +523,13 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="rpg"] .pr-cell { width: 56px; }
 [data-theme="rpg"] .type-cell { width: 36px; }
 [data-theme="rpg"] .days-cell { width: 90px; }
-[data-theme="rpg"] .threads-cell { width: 64px; }
 [data-theme="rpg"] .ci-cell { width: 48px; }
 [data-theme="rpg"] .title-cell { width: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-theme="rpg"] .author-cell { width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-theme="rpg"] .base-cell { width: 100px; }
 [data-theme="rpg"] .deployed-cell { width: 170px; }
 [data-theme="rpg"] .version-cell { width: 90px; }
+[data-theme="rpg"] .reason-cell { width: 180px; }
 /* Corner ornaments */
 [data-theme="rpg"] section::before,
 [data-theme="rpg"] section::after {
@@ -582,7 +592,6 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="rpg"] .type-other { color: #8a6010; background: none; }
 
 /* RPG hazard badges */
-[data-theme="rpg"] .threads-cell { text-align: center; color: inherit; }
 [data-theme="rpg"] .hazard {
   display: inline-flex; align-items: center; gap: 0.3rem;
   font-family: 'Cinzel', serif; font-size: 0.72rem; font-weight: 700;

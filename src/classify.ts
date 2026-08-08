@@ -2,6 +2,25 @@ import type { SearchPR, PRDetail } from './github.ts'
 
 export type Bucket = 'ready' | 'blocked' | 'skipped' | 'failing' | 'building' | 'needsReview' | 'draft' | 'merged'
 
+// StatusState is SUCCESS | FAILURE | ERROR | PENDING | EXPECTED, or null when no
+// rollup exists. Null means no checks ran, which is not the same as failing.
+const CI_FAILING = new Set(['FAILURE', 'ERROR'])
+const CI_IN_FLIGHT = new Set(['PENDING', 'EXPECTED'])
+
+export function isCIFailing(state: string | null): boolean {
+  return CI_FAILING.has(state ?? '')
+}
+
+export function isCIInFlight(state: string | null): boolean {
+  return CI_IN_FLIGHT.has(state ?? '')
+}
+
+// Stacked PRs wait on their base PR, not on a reviewer. Empty defaultBranchName
+// means we could not resolve it, so assume not stacked rather than guess.
+function isStacked(detail: PRDetail): boolean {
+  return detail.defaultBranchName !== '' && detail.baseRefName !== detail.defaultBranchName
+}
+
 export interface ClassifiedPR {
   number: number
   title: string
@@ -14,9 +33,22 @@ export interface ClassifiedPR {
   bucket: Bucket
   unresolvedThreads: number
   ciState: string | null
+  hasConflicts: boolean
   deployedEnvs: string[]
   version: string | null
   ageMinutes: number
+  stackedOn: StackedBase | null
+}
+
+// `pr` is null when no open PR owns the base branch, leaving only the name to show.
+export interface StackedBase {
+  branch: string
+  pr: StackParent | null
+}
+
+interface StackParent {
+  number: number
+  url: string
 }
 
 // ── Review queue classification (PRs requesting my review) ──
@@ -41,9 +73,10 @@ export function classifyReviewPRs(
     const detail = findDetail(pr, detailsByRepo)
     if (!detail) { skippedCount++; continue }
     if (detail.viewerReviewState === 'APPROVED') { skippedCount++; continue }
-    if (detail.ciState !== 'SUCCESS') { skippedCount++; continue }
+    if (isCIInFlight(detail.ciState) || isCIFailing(detail.ciState)) { skippedCount++; continue }
 
-    const classified = buildClassified(pr, detail, detail.unresolvedThreads > 0 ? 'blocked' : 'ready')
+    const isBlocked = detail.unresolvedThreads > 0 || detail.mergeable === 'CONFLICTING'
+    const classified = buildClassified(pr, detail, isBlocked ? 'blocked' : 'ready')
 
     if (classified.bucket === 'ready') ready.push(classified)
     else blocked.push(classified)
@@ -64,6 +97,21 @@ export interface MyPRsResult {
   recentlyMerged: ClassifiedPR[]
 }
 
+// A child's baseRefName is its parent's headRefName, so the open PRs we already
+// hold are enough to name the blocking PR without another request.
+function indexByHeadRef(
+  searchResults: SearchPR[],
+  detailsByRepo: Map<string, PRDetail[]>,
+): Map<string, StackParent> {
+  const byHeadRef = new Map<string, StackParent>()
+  for (const pr of searchResults) {
+    const detail = findDetail(pr, detailsByRepo)
+    if (!detail?.headRefName || detail.mergedAt) continue
+    byHeadRef.set(`${pr.repo}:${detail.headRefName}`, { number: pr.number, url: pr.url })
+  }
+  return byHeadRef
+}
+
 export function classifyMyPRs(
   searchResults: SearchPR[],
   detailsByRepo: Map<string, PRDetail[]>,
@@ -74,29 +122,30 @@ export function classifyMyPRs(
   const building: ClassifiedPR[] = []
   const failing: ClassifiedPR[] = []
   const drafts: ClassifiedPR[] = []
+  const parentsByHeadRef = indexByHeadRef(searchResults, detailsByRepo)
 
   for (const pr of searchResults) {
     const detail = findDetail(pr, detailsByRepo)
 
     if (pr.isDraft) {
-      drafts.push(buildClassified(pr, detail ?? null, 'draft'))
+      drafts.push(buildClassified(pr, detail ?? null, 'draft', parentsByHeadRef))
       continue
     }
 
     if (!detail) continue
 
-    if (detail.ciState === 'PENDING') {
+    if (isCIInFlight(detail.ciState)) {
       building.push(buildClassified(pr, detail, 'building'))
       continue
     }
 
-    if (detail.ciState !== 'SUCCESS') {
+    if (isCIFailing(detail.ciState)) {
       failing.push(buildClassified(pr, detail, 'failing'))
       continue
     }
 
-    if (detail.unresolvedThreads > 0) {
-      blocked.push(buildClassified(pr, detail, 'blocked'))
+    if (isStacked(detail) || detail.unresolvedThreads > 0 || detail.mergeable === 'CONFLICTING') {
+      blocked.push(buildClassified(pr, detail, 'blocked', parentsByHeadRef))
       continue
     }
 
@@ -176,17 +225,17 @@ export function classifyDependabotPRs(
     const detail = findDetail(pr, detailsByRepo)
     if (!detail) continue
 
-    if (detail.ciState === 'PENDING') {
+    if (isCIInFlight(detail.ciState)) {
       building.push(buildClassified(pr, detail, 'building'))
       continue
     }
 
-    if (detail.ciState !== 'SUCCESS') {
+    if (isCIFailing(detail.ciState)) {
       failing.push(buildClassified(pr, detail, 'failing'))
       continue
     }
 
-    if (detail.unresolvedThreads > 0) {
+    if (detail.unresolvedThreads > 0 || detail.mergeable === 'CONFLICTING') {
       blocked.push(buildClassified(pr, detail, 'blocked'))
     } else {
       ready.push(buildClassified(pr, detail, 'ready'))
@@ -202,8 +251,16 @@ function findDetail(pr: SearchPR, detailsByRepo: Map<string, PRDetail[]>): PRDet
   return detailsByRepo.get(pr.repo)?.find((d) => d.number === pr.number)
 }
 
-function buildClassified(pr: SearchPR, detail: PRDetail | null, bucket: Bucket): ClassifiedPR {
+function buildClassified(
+  pr: SearchPR,
+  detail: PRDetail | null,
+  bucket: Bucket,
+  parentsByHeadRef: Map<string, StackParent> = new Map(),
+): ClassifiedPR {
   const age = calcActiveAge(pr.createdAt, detail?.timelineEvents ?? [])
+  const stackedOn = detail && isStacked(detail)
+    ? { branch: detail.baseRefName, pr: parentsByHeadRef.get(`${pr.repo}:${detail.baseRefName}`) ?? null }
+    : null
   return {
     number: pr.number,
     title: truncateTitle(pr.title),
@@ -217,8 +274,10 @@ function buildClassified(pr: SearchPR, detail: PRDetail | null, bucket: Bucket):
     bucket,
     unresolvedThreads: detail?.unresolvedThreads ?? 0,
     ciState: detail?.ciState ?? null,
+    hasConflicts: detail?.mergeable === 'CONFLICTING',
     deployedEnvs: [],
     version: null,
+    stackedOn,
   }
 }
 

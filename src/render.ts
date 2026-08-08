@@ -1,5 +1,5 @@
-import type { ClassifiedPR } from './classify.ts'
-import { groupByRepo } from './classify.ts'
+import type { ClassifiedPR, StackedBase } from './classify.ts'
+import { groupByRepo, isCIFailing, isCIInFlight } from './classify.ts'
 import type { ThemeConfig } from './themes.ts'
 
 const TYPE_PATTERN = /^(feat|fix|build|chore|refactor|test|docs|ci|perf|style|revert)[\s(:]/i
@@ -36,9 +36,44 @@ function renderTypeTd(type: string, theme: ThemeConfig): string {
   return `<td class="type-cell"><span class="type-badge ${typeClass(type)}">${escapeHtml(label)}</span></td>`
 }
 
-function renderThreadsTd(count: number, theme: ThemeConfig): string {
-  if (theme.threadBadgeFn) return `<td class="threads-cell">${theme.threadBadgeFn(count)}</td>`
-  return `<td class="threads-cell">${count}</td>`
+// `label` is trusted HTML: callers pass either literal text or a theme badge.
+function pillHtml(className: string, href: string, title: string, label: string): string {
+  return `<a class="${className}" href="${href}" target="_blank" rel="noopener" title="${title}">${label}</a>`
+}
+
+function conflictPillHtml(pr: ClassifiedPR, extraClass = ''): string {
+  const cls = `state-pill conflicts${extraClass ? ' ' + extraClass : ''}`
+  return pillHtml(cls, `${pr.url}/conflicts`, 'Open conflict resolver on GitHub', 'merge conflicts')
+}
+
+// Suppressed where a dedicated column already shows the same state.
+function rowIndicators(pr: ClassifiedPR, suppressed: boolean): string {
+  if (suppressed) return ''
+  const pills: string[] = []
+  if (pr.hasConflicts) pills.push(conflictPillHtml(pr, 'inline-pill'))
+  return pills.join('')
+}
+
+function waitingPillHtml(base: StackedBase): string {
+  const branch = escapeHtml(base.branch)
+  if (!base.pr) return `<span class="state-pill waiting" title="${branch}">Waiting on ${branch}</span>`
+  const title = `Blocked until #${base.pr.number} merges — ${branch}`
+  return pillHtml('state-pill waiting', base.pr.url, title, `Waiting on #${base.pr.number}`)
+}
+
+function renderBlockReasons(pr: ClassifiedPR, theme: ThemeConfig): string {
+  const pills: string[] = []
+  if (pr.stackedOn) pills.push(waitingPillHtml(pr.stackedOn))
+  if (pr.hasConflicts) pills.push(conflictPillHtml(pr))
+  if (pr.unresolvedThreads > 0) {
+    const inner = theme.threadBadgeFn
+      ? theme.threadBadgeFn(pr.unresolvedThreads)
+      : `${pr.unresolvedThreads} thread${pr.unresolvedThreads === 1 ? '' : 's'}`
+    const pillClass = theme.threadBadgeFn ? 'thread-link' : 'thread-link state-pill threads'
+    pills.push(pillHtml(pillClass, pr.url, 'Open conversation on GitHub', inner))
+  }
+  if (pills.length === 0) return '<span class="env-empty">—</span>'
+  return `<div class="state-pills">${pills.join('')}</div>`
 }
 
 function renderEnvChips(envs: string[], repo: string): string {
@@ -51,8 +86,9 @@ function renderEnvChips(envs: string[], repo: string): string {
 
 function ciStatusHtml(state: string | null): string {
   if (state === 'SUCCESS') return '<span class="ci-pass">pass</span>'
-  if (state === 'FAILURE') return '<span class="ci-fail">fail</span>'
-  if (state === 'PENDING') return '<span class="ci-pending"><span class="ci-spinner"></span> pending</span>'
+  if (isCIFailing(state)) return '<span class="ci-fail">fail</span>'
+  if (isCIInFlight(state)) return '<span class="ci-pending"><span class="ci-spinner"></span> pending</span>'
+  if (state === null) return '<span class="ci-none">no checks</span>'
   return '<span class="ci-unknown">—</span>'
 }
 
@@ -72,12 +108,12 @@ function handleBranchCopy(e: Event): void {
 }
 
 export interface RenderColumnOpts {
-  showThreads?: boolean
   showCI?: boolean
   showAuthor?: boolean // default true
   showBaseBranch?: boolean
   showDeployedEnvs?: boolean
   showVersion?: boolean
+  showBlockReasons?: boolean
   mergedColumn?: boolean // relabel trailing column "Merged" and skip head-branch copy button
 }
 
@@ -87,7 +123,7 @@ export function renderSection(
   theme: ThemeConfig,
   opts: RenderColumnOpts = {},
 ): void {
-  const { showThreads = false, showCI = false, showAuthor = true, showBaseBranch = false, showDeployedEnvs = false, showVersion = false, mergedColumn = false } = opts
+  const { showCI = false, showAuthor = true, showBaseBranch = false, showDeployedEnvs = false, showVersion = false, showBlockReasons = false, mergedColumn = false } = opts
   container.innerHTML = ''
 
   if (prs.length === 0) {
@@ -108,7 +144,7 @@ export function renderSection(
     container.appendChild(repoHeader)
 
     const thCells = [`<th class="pr-cell">${escapeHtml(theme.colPR)}</th>`, '<th class="type-cell"></th>', `<th class="title-cell">${escapeHtml(theme.colTitle)}</th>`]
-    if (showThreads) thCells.push(`<th class="threads-cell">${escapeHtml(theme.colThreads)}</th>`)
+    if (showBlockReasons) thCells.push(`<th class="reason-cell">${escapeHtml(theme.colReason)}</th>`)
     if (showCI) thCells.push(`<th class="ci-cell">${escapeHtml(theme.colCI)}</th>`)
     if (showAuthor) thCells.push(`<th class="author-cell">${escapeHtml(theme.colAuthor)}</th>`)
     if (showBaseBranch) thCells.push(`<th class="base-cell">${escapeHtml(theme.colBase)}</th>`)
@@ -122,15 +158,16 @@ export function renderSection(
     const tbody = document.createElement('tbody')
     for (const pr of repoPRs) {
       const { type, rest } = extractType(pr.title)
+      const indicators = rowIndicators(pr, showBlockReasons)
       const branchBtn = !mergedColumn && pr.headRefName
         ? ` <button type="button" class="branch-btn" data-branch="${escapeHtml(pr.headRefName)}" aria-label="Copy branch ${escapeHtml(pr.headRefName)}">\u2387</button>`
         : ''
       const cells = [
         `<td class="pr-cell"><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number}</a>${branchBtn}</td>`,
         renderTypeTd(type, theme),
-        `<td class="title-cell">${escapeHtml(rest)}</td>`,
+        `<td class="title-cell"><div class="title-wrap"><span class="title-text">${escapeHtml(rest)}</span>${indicators}</div></td>`,
       ]
-      if (showThreads) cells.push(renderThreadsTd(pr.unresolvedThreads, theme))
+      if (showBlockReasons) cells.push(`<td class="reason-cell">${renderBlockReasons(pr, theme)}</td>`)
       if (showCI) cells.push(`<td class="ci-cell">${ciStatusHtml(pr.ciState)}</td>`)
       if (showAuthor) cells.push(`<td class="author-cell">${escapeHtml(pr.author)}</td>`)
       if (showBaseBranch) cells.push(`<td class="base-cell">${escapeHtml(pr.baseRefName || '\u2014')}</td>`)
@@ -139,7 +176,7 @@ export function renderSection(
       cells.push(`<td class="days-cell">${pr.daysOpen}</td>`)
 
       const row = document.createElement('tr')
-      if (pr.ciState === 'PENDING') row.classList.add('building')
+      if (isCIInFlight(pr.ciState)) row.classList.add('building')
       if (pr.bucket === 'merged') row.classList.add('merged')
       row.innerHTML = cells.join('')
       tbody.appendChild(row)

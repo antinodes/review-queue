@@ -75,7 +75,7 @@ function renderActiveTab(): void {
     setText('reviews-ready-h', t.sections.ready)
     setText('reviews-blocked-h', t.sections.blocked)
     renderSection($('reviews-ready'), r.ready, t)
-    renderSection($('reviews-blocked'), r.blocked, t, { showThreads: true })
+    renderSection($('reviews-blocked'), r.blocked, t, { showBlockReasons: true })
     renderSummary($('reviews-summary'),
       `${r.ready.length} ready, ${r.blocked.length} blocked, ${r.skippedCount} skipped`)
   }
@@ -91,7 +91,7 @@ function renderActiveTab(): void {
     setText('my-merged-h', t.sections.recentlyMerged)
     renderSection($('my-ready'), m.readyToMerge, t, { showAuthor: false })
     renderSection($('my-needsReview'), m.needsReview, t, { showAuthor: false })
-    renderSection($('my-blocked'), m.blocked, t, { showThreads: true, showAuthor: false })
+    renderSection($('my-blocked'), m.blocked, t, { showBlockReasons: true, showAuthor: false })
     renderSection($('my-building'), m.building, t, { showCI: true, showAuthor: false })
     renderSection($('my-failing'), m.failing, t, { showCI: true, showAuthor: false })
     renderSection($('my-draft'), m.drafts, t, { showAuthor: false })
@@ -109,7 +109,7 @@ function renderActiveTab(): void {
     setText('dep-building-h', t.sections.depBuilding)
     setText('dep-failing-h', t.sections.depFailing)
     renderSection($('dep-ready'), d.ready, t, { showAuthor: false })
-    renderSection($('dep-blocked'), d.blocked, t, { showThreads: true, showAuthor: false })
+    renderSection($('dep-blocked'), d.blocked, t, { showBlockReasons: true, showAuthor: false })
     renderSection($('dep-building'), d.building, t, { showCI: true, showAuthor: false })
     renderSection($('dep-failing'), d.failing, t, { showCI: true, showAuthor: false })
     const total = d.ready.length + d.blocked.length + d.building.length + d.failing.length
