@@ -7,7 +7,3 @@ ai-docs/
 .env
 .env.local
 .env.*.local
-
-# CDK build artifacts
-infra/cdk.out
-infra/node_modules
