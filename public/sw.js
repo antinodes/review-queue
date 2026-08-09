@@ -1,4 +1,4 @@
-const CACHE_NAME = 'review-queue-v2'
+const CACHE_NAME = 'review-queue-v3'
 
 self.addEventListener('install', () => {
   self.skipWaiting()
@@ -18,6 +18,10 @@ self.addEventListener('fetch', (event) => {
 
   // Don't cache API calls
   if (url.hostname === 'api.github.com') return
+
+  // Never touch non-GET requests (e.g. the OAuth token-exchange POST).
+  // cache.put throws on POST, and these must always hit the network.
+  if (event.request.method !== 'GET') return
 
   event.respondWith(
     fetch(event.request)

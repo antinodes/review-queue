@@ -4,6 +4,7 @@ import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, isDependabot }
 import type { ReviewResult, MyPRsResult, DependabotResult } from './classify.ts'
 import { renderSection, renderSummary, renderError } from './render.ts'
 import { getToken, saveToken, clearToken } from './token.ts'
+import { beginOAuth, handleOAuthCallback, oauthEnabled, patEnabled } from './auth.ts'
 import { themes, getTheme, saveTheme, applyTheme } from './themes.ts'
 import type { ThemeConfig } from './themes.ts'
 import './style.css'
@@ -13,6 +14,8 @@ const $ = (id: string) => document.getElementById(id)!
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let hasLoadedOnce = false
+// Bumped on sign-out so in-flight loadQueue calls discard their results.
+let sessionEpoch = 0
 let activeTheme: ThemeConfig = getTheme()
 let activeTab: 'reviews' | 'myPRs' | 'dependabot' = 'reviews'
 
@@ -21,15 +24,33 @@ let cachedReviews: ReviewResult | null = null
 let cachedMyPRs: MyPRsResult | null = null
 let cachedDependabot: DependabotResult | null = null
 
-function showTokenPrompt(): void {
+// Shows the sign-in prompt, revealing the OAuth and/or PAT section per build config.
+// Does not clear the error banner, so callers can surface a message alongside it.
+function showAuthPrompt(): void {
   $('token-prompt').classList.remove('hidden')
+  $('oauth-section').classList.toggle('hidden', !oauthEnabled)
+  $('pat-section').classList.toggle('hidden', !patEnabled)
+  $('signout-btn').classList.add('hidden')
   $('content').classList.add('hidden')
   $('loading').classList.add('hidden')
-  $('error').classList.add('hidden')
 }
 
-function hideTokenPrompt(): void {
+function hideAuthPrompt(): void {
   $('token-prompt').classList.add('hidden')
+  $('signout-btn').classList.remove('hidden')
+}
+
+function signOut(): void {
+  sessionEpoch++
+  clearToken()
+  if (refreshTimer) clearInterval(refreshTimer)
+  updateBadge(0)
+  hasLoadedOnce = false
+  cachedReviews = null
+  cachedMyPRs = null
+  cachedDependabot = null
+  $('error').classList.add('hidden')
+  showAuthPrompt()
 }
 
 // ── Tab switching ──
@@ -118,6 +139,7 @@ async function fetchDetails(token: string, prs: SearchPR[], viewerLogin: string)
 }
 
 async function loadQueue(token: string): Promise<void> {
+  const epoch = sessionEpoch
   $('error').classList.add('hidden')
 
   if (hasLoadedOnce) {
@@ -143,12 +165,14 @@ async function loadQueue(token: string): Promise<void> {
     const allPRs = [...reviewPRs, ...authoredPRs]
     const detailsByRepo = await fetchDetails(token, allPRs, viewerLogin)
 
+    $('loading').classList.add('hidden')
+    $('progress-bar').classList.remove('active')
+    if (epoch !== sessionEpoch) return // signed out mid-fetch — discard
+
     cachedReviews = classifyReviewPRs(humanReviewPRs, detailsByRepo)
     cachedMyPRs = classifyMyPRs(authoredPRs, detailsByRepo)
     cachedDependabot = classifyDependabotPRs(dependabotPRs, detailsByRepo)
 
-    $('loading').classList.add('hidden')
-    $('progress-bar').classList.remove('active')
     $('content').classList.remove('hidden')
     hasLoadedOnce = true
 
@@ -158,18 +182,21 @@ async function loadQueue(token: string): Promise<void> {
   } catch (err) {
     $('loading').classList.add('hidden')
     $('progress-bar').classList.remove('active')
+    if (epoch !== sessionEpoch) return // signed out mid-fetch — discard
     const message = err instanceof Error ? err.message : 'Unknown error'
 
     if (message.includes('401')) {
-      clearToken()
-      renderError($('error'), 'Token expired or invalid. Please re-enter.')
-      showTokenPrompt()
+      signOut()
+      renderError($('error'), 'Session expired — sign in again.')
       return
     }
 
     renderError($('error'), `Failed to load PRs: ${message}`, [
-      { label: 'Re-enter token', onClick: () => { clearToken(); showTokenPrompt() } },
+      { label: oauthEnabled ? 'Sign in again' : 'Re-enter token', onClick: signOut },
     ])
+    // With no content on screen the toolbar (refresh/sign-out) is hidden too;
+    // re-show the prompt so the user has a way to retry.
+    if (!hasLoadedOnce) showAuthPrompt()
   }
 }
 
@@ -236,46 +263,68 @@ function initThemePicker(): void {
   }
 }
 
+// The one path into a signed-in session, whatever produced the token.
+function enterApp(token: string): void {
+  hideAuthPrompt()
+  loadQueue(token)
+  startAutoRefresh(token)
+}
+
+// Runs the OAuth callback (if this load is one), then loads the queue or shows
+// the prompt. Callback handling must precede the token check so a fresh sign-in
+// is picked up on the same page load.
+async function startup(): Promise<void> {
+  try {
+    const oauthToken = await handleOAuthCallback()
+    if (oauthToken) saveToken(oauthToken)
+  } catch (err) {
+    renderError($('error'), err instanceof Error ? err.message : 'Sign-in failed')
+  }
+
+  const token = getToken()
+  if (token) enterApp(token)
+  else showAuthPrompt()
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => {
   applyTheme(activeTheme.id)
   initTabs()
   initThemePicker()
 
-  const tokenForm = $('token-form') as HTMLFormElement
-  const tokenInput = $('token-input') as HTMLInputElement
   const refreshBtn = $('refresh-btn')
-  const createTokenLink = $('create-token-link') as HTMLAnchorElement
-  const tokenInfoBtn = $('token-info-btn')
-  const tokenInfo = $('token-info')
+  const signinBtn = $('signin-btn')
+  const signoutBtn = $('signout-btn')
 
-  createTokenLink.href = 'https://github.com/settings/tokens/new?scopes=repo&description=Review+Queue'
-  tokenInfoBtn.addEventListener('click', () => tokenInfo.classList.toggle('hidden'))
+  signinBtn.addEventListener('click', beginOAuth)
+  signoutBtn.addEventListener('click', signOut)
 
-  tokenForm.addEventListener('submit', (e) => {
-    e.preventDefault()
-    const token = tokenInput.value.trim()
-    if (!token) return
-    saveToken(token)
-    tokenInput.value = ''
-    hideTokenPrompt()
-    loadQueue(token)
-    startAutoRefresh(token)
-  })
+  if (patEnabled) {
+    const tokenForm = $('token-form') as HTMLFormElement
+    const tokenInput = $('token-input') as HTMLInputElement
+    const createTokenLink = $('create-token-link') as HTMLAnchorElement
+    const tokenInfoBtn = $('token-info-btn')
+    const tokenInfo = $('token-info')
+
+    createTokenLink.href = 'https://github.com/settings/tokens/new?scopes=repo&description=Review+Queue'
+    tokenInfoBtn.addEventListener('click', () => tokenInfo.classList.toggle('hidden'))
+
+    tokenForm.addEventListener('submit', (e) => {
+      e.preventDefault()
+      const token = tokenInput.value.trim()
+      if (!token) return
+      saveToken(token)
+      tokenInput.value = ''
+      enterApp(token)
+    })
+  }
 
   refreshBtn.addEventListener('click', () => {
     const token = getToken()
     if (token) loadQueue(token)
   })
 
-  const token = getToken()
-  if (token) {
-    hideTokenPrompt()
-    loadQueue(token)
-    startAutoRefresh(token)
-  } else {
-    showTokenPrompt()
-  }
+  startup()
 })
 
 if ('serviceWorker' in navigator) {
