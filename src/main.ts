@@ -191,7 +191,9 @@ async function loadQueue(token: string): Promise<void> {
       return
     }
 
-    renderError($('error'), `Failed to load PRs: ${message}`)
+    renderError($('error'), `Failed to load PRs: ${message}`, [
+      { label: oauthEnabled ? 'Sign in again' : 'Re-enter token', onClick: signOut },
+    ])
     // With no content on screen the toolbar (refresh/sign-out) is hidden too;
     // re-show the prompt so the user has a way to retry.
     if (!hasLoadedOnce) showAuthPrompt()
