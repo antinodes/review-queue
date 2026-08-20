@@ -41,6 +41,14 @@ function renderThreadsTd(count: number, theme: ThemeConfig): string {
   return `<td class="threads-cell">${count}</td>`
 }
 
+function renderEnvChips(envs: string[], repo: string): string {
+  if (envs.length === 0) return '<span class="env-empty">—</span>'
+  const chips = envs.map((e) =>
+    `<a class="env-chip" href="https://github.com/${encodeURI(repo)}/deployments/${encodeURIComponent(e)}" target="_blank" rel="noopener">${escapeHtml(e)}</a>`,
+  ).join('')
+  return `<div class="env-chips">${chips}</div>`
+}
+
 function ciStatusHtml(state: string | null): string {
   if (state === 'SUCCESS') return '<span class="ci-pass">pass</span>'
   if (state === 'FAILURE') return '<span class="ci-fail">fail</span>'
@@ -67,6 +75,10 @@ export interface RenderColumnOpts {
   showThreads?: boolean
   showCI?: boolean
   showAuthor?: boolean // default true
+  showBaseBranch?: boolean
+  showDeployedEnvs?: boolean
+  showVersion?: boolean
+  mergedColumn?: boolean // relabel trailing column "Merged" and skip head-branch copy button
 }
 
 export function renderSection(
@@ -75,7 +87,7 @@ export function renderSection(
   theme: ThemeConfig,
   opts: RenderColumnOpts = {},
 ): void {
-  const { showThreads = false, showCI = false, showAuthor = true } = opts
+  const { showThreads = false, showCI = false, showAuthor = true, showBaseBranch = false, showDeployedEnvs = false, showVersion = false, mergedColumn = false } = opts
   container.innerHTML = ''
 
   if (prs.length === 0) {
@@ -83,7 +95,7 @@ export function renderSection(
     return
   }
 
-  const groups = groupByRepo(prs)
+  const groups = groupByRepo(prs, mergedColumn ? 'asc' : 'desc')
 
   if (!container.dataset.branchCopy) {
     container.addEventListener('click', handleBranchCopy)
@@ -99,7 +111,10 @@ export function renderSection(
     if (showThreads) thCells.push(`<th class="threads-cell">${escapeHtml(theme.colThreads)}</th>`)
     if (showCI) thCells.push(`<th class="ci-cell">${escapeHtml(theme.colCI)}</th>`)
     if (showAuthor) thCells.push(`<th class="author-cell">${escapeHtml(theme.colAuthor)}</th>`)
-    thCells.push(`<th class="days-cell">${escapeHtml(theme.colOpen)}</th>`)
+    if (showBaseBranch) thCells.push(`<th class="base-cell">${escapeHtml(theme.colBase)}</th>`)
+    if (showDeployedEnvs) thCells.push(`<th class="deployed-cell">${escapeHtml(theme.colDeployed)}</th>`)
+    if (showVersion) thCells.push(`<th class="version-cell">${escapeHtml(theme.colVersion)}</th>`)
+    thCells.push(`<th class="days-cell">${escapeHtml(mergedColumn ? theme.colMerged : theme.colOpen)}</th>`)
 
     const table = document.createElement('table')
     table.innerHTML = `<thead><tr>${thCells.join('')}</tr></thead>`
@@ -107,7 +122,7 @@ export function renderSection(
     const tbody = document.createElement('tbody')
     for (const pr of repoPRs) {
       const { type, rest } = extractType(pr.title)
-      const branchBtn = pr.headRefName
+      const branchBtn = !mergedColumn && pr.headRefName
         ? ` <button type="button" class="branch-btn" data-branch="${escapeHtml(pr.headRefName)}" aria-label="Copy branch ${escapeHtml(pr.headRefName)}">\u2387</button>`
         : ''
       const cells = [
@@ -118,10 +133,14 @@ export function renderSection(
       if (showThreads) cells.push(renderThreadsTd(pr.unresolvedThreads, theme))
       if (showCI) cells.push(`<td class="ci-cell">${ciStatusHtml(pr.ciState)}</td>`)
       if (showAuthor) cells.push(`<td class="author-cell">${escapeHtml(pr.author)}</td>`)
+      if (showBaseBranch) cells.push(`<td class="base-cell">${escapeHtml(pr.baseRefName || '\u2014')}</td>`)
+      if (showDeployedEnvs) cells.push(`<td class="deployed-cell">${renderEnvChips(pr.deployedEnvs, pr.repo)}</td>`)
+      if (showVersion) cells.push(`<td class="version-cell">${pr.version ? escapeHtml(pr.version) : '<span class="env-empty">—</span>'}</td>`)
       cells.push(`<td class="days-cell">${pr.daysOpen}</td>`)
 
       const row = document.createElement('tr')
       if (pr.ciState === 'PENDING') row.classList.add('building')
+      if (pr.bucket === 'merged') row.classList.add('merged')
       row.innerHTML = cells.join('')
       tbody.appendChild(row)
     }
