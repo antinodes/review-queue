@@ -1,6 +1,33 @@
-import type { SearchPR, PRDetail } from './github.ts'
+import type { SearchPR, PRDetail, StackRef } from './github.ts'
+import { buildStacks, stackMemberKeys, prKey } from './stacks.ts'
+import type { StackGroup } from './stacks.ts'
 
 export type Bucket = 'ready' | 'blocked' | 'skipped' | 'failing' | 'building' | 'needsReview' | 'draft' | 'merged'
+
+// StatusState is SUCCESS | FAILURE | ERROR | PENDING | EXPECTED, or null when the commit has no
+// rollup at all. Null means nothing ran, which is not the same as failing — a repo with no
+// workflows (docs, prompt libraries, config repos) must not land in Failing CI.
+const CI_FAILING = new Set(['FAILURE', 'ERROR'])
+const CI_IN_FLIGHT = new Set(['PENDING', 'EXPECTED'])
+
+export function isCIFailing(state: string | null): boolean {
+  return CI_FAILING.has(state ?? '')
+}
+
+export function isCIInFlight(state: string | null): boolean {
+  return CI_IN_FLIGHT.has(state ?? '')
+}
+
+/**
+ * How long a build may run before the queue calls it stuck. Deliberately several times a normal
+ * run (a typical Seerist suite finishes in under ten minutes) so that a slow build is not
+ * mistaken for a hung one. Raise it if a repo legitimately runs long jobs.
+ */
+export const STALLED_BUILD_MINUTES = 30
+
+export function isStalledBuild(pr: ClassifiedPR): boolean {
+  return pr.buildMinutes !== null && pr.buildMinutes >= STALLED_BUILD_MINUTES
+}
 
 export interface ClassifiedPR {
   number: number
@@ -14,9 +41,16 @@ export interface ClassifiedPR {
   bucket: Bucket
   unresolvedThreads: number
   ciState: string | null
+  /** Minutes the still-running part of CI has been going, or null when nothing is running. */
+  buildMinutes: number | null
+  hasConflicts: boolean
   deployedEnvs: string[]
   version: string | null
   ageMinutes: number
+  stack: StackRef | null
+  mergeStateStatus: string | null
+  reviewDecision: string | null
+  headRepo: string
 }
 
 // ── Review queue classification (PRs requesting my review) ──
@@ -24,7 +58,27 @@ export interface ClassifiedPR {
 export interface ReviewResult {
   ready: ClassifiedPR[]
   blocked: ClassifiedPR[]
+  stacks: StackGroup[]
   skippedCount: number
+}
+
+/**
+ * Pulls stacked PRs out of the flat buckets so a stack renders once, in order, instead of
+ * being scattered across sections by whatever each member's individual CI/review state is.
+ */
+function partitionStacks<T extends Record<string, ClassifiedPR[]>>(
+  buckets: T,
+  bucketNames: Array<keyof T>,
+  linkOnly: ClassifiedPR[] = [],
+): { stacks: StackGroup[]; buckets: T } {
+  const all = bucketNames.flatMap((name) => buckets[name])
+  const stacks = buildStacks(all, linkOnly)
+
+  const claimed = stackMemberKeys(stacks)
+  for (const name of bucketNames) {
+    buckets[name] = buckets[name].filter((pr) => !claimed.has(prKey(pr.repo, pr.number))) as T[keyof T]
+  }
+  return { stacks, buckets }
 }
 
 export function classifyReviewPRs(
@@ -33,23 +87,34 @@ export function classifyReviewPRs(
 ): ReviewResult {
   const ready: ClassifiedPR[] = []
   const blocked: ClassifiedPR[] = []
+  // Skipped-but-open PRs still hold their chains together, so they join the stack graph without
+  // ever being rendered. Approving the middle of a stack is the common case.
+  const linkOnly: ClassifiedPR[] = []
   let skippedCount = 0
 
+  const skip = (pr: SearchPR, detail: PRDetail | null): void => {
+    skippedCount++
+    if (detail) linkOnly.push(buildClassified(pr, detail, 'skipped'))
+  }
+
   for (const pr of searchResults) {
-    if (pr.isDraft) { skippedCount++; continue }
+    const detail = findDetail(pr, detailsByRepo) ?? null
 
-    const detail = findDetail(pr, detailsByRepo)
+    if (pr.isDraft) { skip(pr, detail); continue }
     if (!detail) { skippedCount++; continue }
-    if (detail.viewerReviewState === 'APPROVED') { skippedCount++; continue }
-    if (detail.ciState !== 'SUCCESS') { skippedCount++; continue }
+    if (detail.viewerReviewState === 'APPROVED') { skip(pr, detail); continue }
+    if (isCIInFlight(detail.ciState) || isCIFailing(detail.ciState)) { skip(pr, detail); continue }
 
+    // Conflicts deliberately don't block here: they stop a merge, not a review. They still show
+    // as an inline pill on the row so you can see one without switching tabs.
     const classified = buildClassified(pr, detail, detail.unresolvedThreads > 0 ? 'blocked' : 'ready')
 
     if (classified.bucket === 'ready') ready.push(classified)
     else blocked.push(classified)
   }
 
-  return { ready, blocked, skippedCount }
+  const partitioned = partitionStacks({ ready, blocked }, ['ready', 'blocked'], linkOnly)
+  return { ...partitioned.buckets, stacks: partitioned.stacks, skippedCount }
 }
 
 // ── My PRs classification ──
@@ -61,6 +126,7 @@ export interface MyPRsResult {
   building: ClassifiedPR[]
   failing: ClassifiedPR[]
   drafts: ClassifiedPR[]
+  stacks: StackGroup[]
   recentlyMerged: ClassifiedPR[]
 }
 
@@ -85,17 +151,17 @@ export function classifyMyPRs(
 
     if (!detail) continue
 
-    if (detail.ciState === 'PENDING') {
+    if (isCIInFlight(detail.ciState)) {
       building.push(buildClassified(pr, detail, 'building'))
       continue
     }
 
-    if (detail.ciState !== 'SUCCESS') {
+    if (isCIFailing(detail.ciState)) {
       failing.push(buildClassified(pr, detail, 'failing'))
       continue
     }
 
-    if (detail.unresolvedThreads > 0) {
+    if (detail.unresolvedThreads > 0 || detail.mergeable === 'CONFLICTING') {
       blocked.push(buildClassified(pr, detail, 'blocked'))
       continue
     }
@@ -107,7 +173,11 @@ export function classifyMyPRs(
     }
   }
 
-  return { readyToMerge, needsReview, blocked, building, failing, drafts, recentlyMerged: [] }
+  const partitioned = partitionStacks(
+    { readyToMerge, needsReview, blocked, building, failing, drafts },
+    ['readyToMerge', 'needsReview', 'blocked', 'building', 'failing', 'drafts'],
+  )
+  return { ...partitioned.buckets, stacks: partitioned.stacks, recentlyMerged: [] }
 }
 
 export interface PRMergedMetadata {
@@ -176,17 +246,17 @@ export function classifyDependabotPRs(
     const detail = findDetail(pr, detailsByRepo)
     if (!detail) continue
 
-    if (detail.ciState === 'PENDING') {
+    if (isCIInFlight(detail.ciState)) {
       building.push(buildClassified(pr, detail, 'building'))
       continue
     }
 
-    if (detail.ciState !== 'SUCCESS') {
+    if (isCIFailing(detail.ciState)) {
       failing.push(buildClassified(pr, detail, 'failing'))
       continue
     }
 
-    if (detail.unresolvedThreads > 0) {
+    if (detail.unresolvedThreads > 0 || detail.mergeable === 'CONFLICTING') {
       blocked.push(buildClassified(pr, detail, 'blocked'))
     } else {
       ready.push(buildClassified(pr, detail, 'ready'))
@@ -217,9 +287,22 @@ function buildClassified(pr: SearchPR, detail: PRDetail | null, bucket: Bucket):
     bucket,
     unresolvedThreads: detail?.unresolvedThreads ?? 0,
     ciState: detail?.ciState ?? null,
+    buildMinutes: elapsedMinutes(detail?.buildStartedAt ?? null),
+    hasConflicts: detail?.mergeable === 'CONFLICTING',
     deployedEnvs: [],
     version: null,
+    stack: detail?.stack ?? null,
+    mergeStateStatus: detail?.mergeStateStatus ?? null,
+    reviewDecision: detail?.reviewDecision ?? null,
+    headRepo: detail?.headRepo ?? '',
   }
+}
+
+function elapsedMinutes(since: string | null): number | null {
+  if (!since) return null
+  const started = new Date(since).getTime()
+  if (Number.isNaN(started)) return null
+  return Math.max(0, Math.floor((Date.now() - started) / 60_000))
 }
 
 function truncateTitle(title: string): string {

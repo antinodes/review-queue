@@ -1,5 +1,6 @@
 import type { ClassifiedPR } from './classify.ts'
-import { groupByRepo } from './classify.ts'
+import { groupByRepo, isCIFailing, isCIInFlight, isStalledBuild, STALLED_BUILD_MINUTES } from './classify.ts'
+import type { StackGroup, StackMember } from './stacks.ts'
 import type { ThemeConfig } from './themes.ts'
 
 const TYPE_PATTERN = /^(feat|fix|build|chore|refactor|test|docs|ci|perf|style|revert)[\s(:]/i
@@ -36,9 +37,36 @@ function renderTypeTd(type: string, theme: ThemeConfig): string {
   return `<td class="type-cell"><span class="type-badge ${typeClass(type)}">${escapeHtml(label)}</span></td>`
 }
 
-function renderThreadsTd(count: number, theme: ThemeConfig): string {
-  if (theme.threadBadgeFn) return `<td class="threads-cell">${theme.threadBadgeFn(count)}</td>`
-  return `<td class="threads-cell">${count}</td>`
+// `label` is trusted HTML: callers pass either literal text or a theme badge.
+function pillHtml(className: string, href: string, title: string, label: string): string {
+  return `<a class="${className}" href="${href}" target="_blank" rel="noopener" title="${title}">${label}</a>`
+}
+
+function conflictPillHtml(pr: ClassifiedPR, extraClass = ''): string {
+  const cls = `state-pill conflicts${extraClass ? ' ' + extraClass : ''}`
+  return pillHtml(cls, `${pr.url}/conflicts`, 'Open conflict resolver on GitHub', 'merge conflicts')
+}
+
+function threadPillHtml(pr: ClassifiedPR, theme: ThemeConfig): string {
+  const inner = theme.threadBadgeFn
+    ? theme.threadBadgeFn(pr.unresolvedThreads)
+    : `${pr.unresolvedThreads} thread${pr.unresolvedThreads === 1 ? '' : 's'}`
+  const cls = theme.threadBadgeFn ? 'thread-link' : 'thread-link state-pill threads'
+  return pillHtml(cls, pr.url, 'Open conversation on GitHub', inner)
+}
+
+// Suppressed where the Reason column already carries the same pill.
+function rowIndicators(pr: ClassifiedPR, suppressed: boolean): string {
+  if (suppressed || !pr.hasConflicts) return ''
+  return conflictPillHtml(pr, 'inline-pill')
+}
+
+function renderBlockReasons(pr: ClassifiedPR, theme: ThemeConfig): string {
+  const pills: string[] = []
+  if (pr.hasConflicts) pills.push(conflictPillHtml(pr))
+  if (pr.unresolvedThreads > 0) pills.push(threadPillHtml(pr, theme))
+  if (pills.length === 0) return '<span class="env-empty">—</span>'
+  return `<div class="state-pills">${pills.join('')}</div>`
 }
 
 function renderEnvChips(envs: string[], repo: string): string {
@@ -49,10 +77,28 @@ function renderEnvChips(envs: string[], repo: string): string {
   return `<div class="env-chips">${chips}</div>`
 }
 
-function ciStatusHtml(state: string | null): string {
+// Compact, for a column that also has to fit a spinner: 8m, 47m, 2h 5m.
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
+}
+
+function ciStatusHtml(pr: ClassifiedPR): string {
+  const state = pr.ciState
   if (state === 'SUCCESS') return '<span class="ci-pass">pass</span>'
-  if (state === 'FAILURE') return '<span class="ci-fail">fail</span>'
-  if (state === 'PENDING') return '<span class="ci-pending"><span class="ci-spinner"></span> pending</span>'
+  if (isCIFailing(state)) return '<span class="ci-fail">fail</span>'
+  if (isCIInFlight(state)) {
+    // A build past the threshold is worth interrupting for; below it, the elapsed time is
+    // still the useful thing to show, so it's always rendered when we know it.
+    const elapsed = pr.buildMinutes === null ? '' : ` ${formatDuration(pr.buildMinutes)}`
+    if (isStalledBuild(pr)) {
+      return `<span class="ci-stalled" title="Building for ${formatDuration(pr.buildMinutes!)}, past the ${STALLED_BUILD_MINUTES}m mark — the run may be stuck or waiting on a runner">⚠ stalled${elapsed}</span>`
+    }
+    return `<span class="ci-pending"><span class="ci-spinner"></span> pending${elapsed}</span>`
+  }
+  if (state === null) return '<span class="ci-none">no checks</span>'
   return '<span class="ci-unknown">—</span>'
 }
 
@@ -71,8 +117,176 @@ function handleBranchCopy(e: Event): void {
   })
 }
 
+// ── Stacks ──
+
+function handleCopyCommand(e: Event): void {
+  const btn = (e.target as HTMLElement).closest('.stack-cmd-btn') as HTMLButtonElement | null
+  if (!btn) return
+  const cmd = btn.dataset.cmd
+  if (!cmd) return
+  // Remember the resting label once. Reading it at click time means a second click inside the
+  // flash window captures "copied ✓" and restores to that forever.
+  btn.dataset.restLabel ??= btn.textContent ?? ''
+  const flash = (label: string, cls: string): void => {
+    window.clearTimeout(Number(btn.dataset.flashTimer))
+    btn.textContent = label
+    btn.classList.add(cls)
+    const timer = window.setTimeout(() => {
+      btn.textContent = btn.dataset.restLabel ?? ''
+      btn.classList.remove('copied', 'copy-failed')
+    }, 1800)
+    btn.dataset.flashTimer = String(timer)
+  }
+  // Clipboard writes reject when the document isn't focused — say so rather than no-op.
+  navigator.clipboard.writeText(cmd).then(
+    () => flash('copied ✓', 'copied'),
+    () => flash('copy failed', 'copy-failed'),
+  )
+}
+
+function chipLink(cls: string, href: string, title: string, label: string): string {
+  return `<a class="chip ${cls}" href="${href}" target="_blank" rel="noopener" title="${title}">${escapeHtml(label)}</a>`
+}
+
+// One chip per row: the single thing standing between this rung and a merge. Precedence mirrors
+// classifyMyPRs so a stack row reads the same as the bucket it would have landed in, except that
+// conflicts outrank "waiting" — those need hands on them whatever the rung's position.
+// "mergeable" is the last resort and must stay that way — it claims nothing is left to do.
+function stateChip(member: StackMember): string {
+  const pr = member.pr
+  if (pr.bucket === 'draft') return '<span class="chip chip-draft">draft</span>'
+  if (pr.hasConflicts) return chipLink('chip-fail', `${pr.url}/conflicts`, 'Open conflict resolver on GitHub', 'conflicts')
+  if (member.parentNumber !== null) {
+    return `<span class="chip chip-waiting">waiting on #${member.parentNumber}</span>`
+  }
+  if (isCIInFlight(pr.ciState)) {
+    if (isStalledBuild(pr)) return `<span class="chip chip-fail">stalled ${formatDuration(pr.buildMinutes!)}</span>`
+    return '<span class="chip chip-building">building</span>'
+  }
+  // Null means GitHub reported no rollup at all — the CI column already says "no checks".
+  if (isCIFailing(pr.ciState)) return '<span class="chip chip-fail">CI failed</span>'
+  if (pr.unresolvedThreads > 0) {
+    const label = `${pr.unresolvedThreads} thread${pr.unresolvedThreads === 1 ? '' : 's'}`
+    return chipLink('chip-blocked', pr.url, 'Open conversation on GitHub', label)
+  }
+  if (pr.reviewDecision === 'CHANGES_REQUESTED') return '<span class="chip chip-changes">changes requested</span>'
+  if (pr.reviewDecision !== 'APPROVED') return '<span class="chip chip-needs-review">needs review</span>'
+  // Approved and green but still gated — required checks, CODEOWNERS, or a protection rule.
+  if (pr.mergeStateStatus === 'BLOCKED') return '<span class="chip chip-blocked">blocked</span>'
+  return '<span class="chip chip-ready">mergeable</span>'
+}
+
+export function renderStacks(container: HTMLElement, stacks: StackGroup[], theme: ThemeConfig): void {
+  container.innerHTML = ''
+
+  if (stacks.length === 0) {
+    container.innerHTML = '<p class="empty">None</p>'
+    return
+  }
+
+  if (!container.dataset.cmdCopy) {
+    container.addEventListener('click', handleCopyCommand)
+    container.addEventListener('click', handleBranchCopy)
+    container.dataset.cmdCopy = '1'
+  }
+
+  for (const stack of stacks) {
+    container.appendChild(buildStackCard(stack, theme))
+  }
+}
+
+// A rung with no visible parent still shows the trunk marker; deeper rungs indent one step per
+// level so a branching stack doesn't read as a single line.
+function railFor(member: StackMember, index: number): string {
+  if (index === 0) return '●'
+  const indent = '&nbsp;'.repeat(Math.max(0, member.depth - 1) * 2)
+  return `${indent}└`
+}
+
+function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
+  const card = document.createElement('div')
+  card.className = 'stack-card'
+
+  const total = stack.members.length + stack.hiddenCount
+
+  // BEHIND is a clean restack; DIRTY needs one too but you'll be resolving conflicts by hand.
+  const conflicted = stack.members.some((m) => m.pr.hasConflicts || m.pr.mergeStateStatus === 'DIRTY')
+  const behind = stack.members.some((m) => m.pr.mergeStateStatus === 'BEHIND')
+  const restackWarning = conflicted
+    ? '<span class="stack-behind">conflicts</span>'
+    : behind ? '<span class="stack-behind">needs restack</span>' : ''
+
+  const meta = [
+    `${total} PRs`,
+    stack.native ? '' : '<span class="stack-inferred" title="Inferred from branch bases — GitHub does not track this as a stack">inferred</span>',
+    restackWarning,
+  ].filter(Boolean).join(' · ')
+
+  const header = document.createElement('div')
+  header.className = 'stack-header'
+  header.innerHTML = `
+    <div class="stack-id">
+      <span class="stack-repo">${escapeHtml(stack.repo)}</span>
+      <span class="stack-label">${escapeHtml(stack.label)}</span>
+      <span class="stack-meta">${meta}</span>
+    </div>
+    <button type="button" class="stack-cmd-btn" data-cmd="${escapeHtml(stack.rebaseCommand)}" title="${escapeHtml(stack.rebaseCommand)}">${stack.native ? 'copy rebase' : 'copy stack init'}</button>`
+  card.appendChild(header)
+
+  const table = document.createElement('table')
+  table.className = 'stack-table'
+  table.innerHTML = `<thead><tr>
+    <th class="stack-pos-cell">${escapeHtml(theme.colPos)}</th>
+    <th class="pr-cell">${escapeHtml(theme.colPR)}</th>
+    <th class="type-cell"></th>
+    <th class="title-cell">${escapeHtml(theme.colTitle)}</th>
+    <th class="ci-cell">${escapeHtml(theme.colCI)}</th>
+    <th class="state-cell">${escapeHtml(theme.colReason)}</th>
+    <th class="days-cell">${escapeHtml(theme.colOpen)}</th>
+  </tr></thead>`
+
+  const tbody = document.createElement('tbody')
+  stack.members.forEach((member, index) => {
+    const pr = member.pr
+    const { type, rest } = extractType(pr.title)
+    // Native stacks number from GitHub so the labels stay right when we can only see part of the stack.
+    const position = pr.stack ? pr.stack.position : index + 1
+    const row = document.createElement('tr')
+    row.className = index === 0 ? 'stack-row stack-bottom' : 'stack-row'
+    if (isCIInFlight(pr.ciState)) row.classList.add(isStalledBuild(pr) ? 'stalled' : 'building')
+    row.innerHTML = [
+      // Indent by tree depth: siblings off one rung sit level with each other rather than
+      // implying that the row above is what this one branched from.
+      `<td class="stack-pos-cell"><span class="stack-rail">${railFor(member, index)}</span>${position}</td>`,
+      `<td class="pr-cell"><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number}</a>` +
+        (pr.headRefName ? ` <button type="button" class="branch-btn" data-branch="${escapeHtml(pr.headRefName)}" aria-label="Copy branch ${escapeHtml(pr.headRefName)}">⎇</button>` : '') + '</td>',
+      renderTypeTd(type, theme),
+      `<td class="title-cell">${escapeHtml(rest)}</td>`,
+      `<td class="ci-cell">${ciStatusHtml(pr)}</td>`,
+      `<td class="state-cell">${stateChip(member)}</td>`,
+      `<td class="days-cell">${pr.daysOpen}</td>`,
+    ].join('')
+    tbody.appendChild(row)
+  })
+  table.appendChild(tbody)
+  // The card clips to keep its rounded corners, so the table needs its own scroller on narrow screens.
+  const scroller = document.createElement('div')
+  scroller.className = 'stack-table-wrap'
+  scroller.appendChild(table)
+  card.appendChild(scroller)
+
+  if (stack.hiddenCount > 0) {
+    const note = document.createElement('p')
+    note.className = 'stack-hidden-note'
+    note.textContent = `${stack.hiddenCount} more PR${stack.hiddenCount === 1 ? '' : 's'} in this stack not in your queue`
+    card.appendChild(note)
+  }
+
+  return card
+}
+
 export interface RenderColumnOpts {
-  showThreads?: boolean
+  showBlockReasons?: boolean
   showCI?: boolean
   showAuthor?: boolean // default true
   showBaseBranch?: boolean
@@ -87,7 +301,7 @@ export function renderSection(
   theme: ThemeConfig,
   opts: RenderColumnOpts = {},
 ): void {
-  const { showThreads = false, showCI = false, showAuthor = true, showBaseBranch = false, showDeployedEnvs = false, showVersion = false, mergedColumn = false } = opts
+  const { showBlockReasons = false, showCI = false, showAuthor = true, showBaseBranch = false, showDeployedEnvs = false, showVersion = false, mergedColumn = false } = opts
   container.innerHTML = ''
 
   if (prs.length === 0) {
@@ -108,7 +322,7 @@ export function renderSection(
     container.appendChild(repoHeader)
 
     const thCells = [`<th class="pr-cell">${escapeHtml(theme.colPR)}</th>`, '<th class="type-cell"></th>', `<th class="title-cell">${escapeHtml(theme.colTitle)}</th>`]
-    if (showThreads) thCells.push(`<th class="threads-cell">${escapeHtml(theme.colThreads)}</th>`)
+    if (showBlockReasons) thCells.push(`<th class="reason-cell">${escapeHtml(theme.colReason)}</th>`)
     if (showCI) thCells.push(`<th class="ci-cell">${escapeHtml(theme.colCI)}</th>`)
     if (showAuthor) thCells.push(`<th class="author-cell">${escapeHtml(theme.colAuthor)}</th>`)
     if (showBaseBranch) thCells.push(`<th class="base-cell">${escapeHtml(theme.colBase)}</th>`)
@@ -122,16 +336,17 @@ export function renderSection(
     const tbody = document.createElement('tbody')
     for (const pr of repoPRs) {
       const { type, rest } = extractType(pr.title)
+      const indicators = rowIndicators(pr, showBlockReasons)
       const branchBtn = !mergedColumn && pr.headRefName
         ? ` <button type="button" class="branch-btn" data-branch="${escapeHtml(pr.headRefName)}" aria-label="Copy branch ${escapeHtml(pr.headRefName)}">\u2387</button>`
         : ''
       const cells = [
         `<td class="pr-cell"><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number}</a>${branchBtn}</td>`,
         renderTypeTd(type, theme),
-        `<td class="title-cell">${escapeHtml(rest)}</td>`,
+        `<td class="title-cell"><div class="title-wrap"><span class="title-text">${escapeHtml(rest)}</span>${indicators}</div></td>`,
       ]
-      if (showThreads) cells.push(renderThreadsTd(pr.unresolvedThreads, theme))
-      if (showCI) cells.push(`<td class="ci-cell">${ciStatusHtml(pr.ciState)}</td>`)
+      if (showBlockReasons) cells.push(`<td class="reason-cell">${renderBlockReasons(pr, theme)}</td>`)
+      if (showCI) cells.push(`<td class="ci-cell">${ciStatusHtml(pr)}</td>`)
       if (showAuthor) cells.push(`<td class="author-cell">${escapeHtml(pr.author)}</td>`)
       if (showBaseBranch) cells.push(`<td class="base-cell">${escapeHtml(pr.baseRefName || '\u2014')}</td>`)
       if (showDeployedEnvs) cells.push(`<td class="deployed-cell">${renderEnvChips(pr.deployedEnvs, pr.repo)}</td>`)
@@ -139,7 +354,7 @@ export function renderSection(
       cells.push(`<td class="days-cell">${pr.daysOpen}</td>`)
 
       const row = document.createElement('tr')
-      if (pr.ciState === 'PENDING') row.classList.add('building')
+      if (isCIInFlight(pr.ciState)) row.classList.add(isStalledBuild(pr) ? 'stalled' : 'building')
       if (pr.bucket === 'merged') row.classList.add('merged')
       row.innerHTML = cells.join('')
       tbody.appendChild(row)
@@ -174,8 +389,10 @@ export function renderError(container: HTMLElement, message: string, actions: Er
   container.classList.remove('hidden')
 }
 
+// innerHTML escapes & < > but leaves quotes alone, and these strings land in attribute position.
+// Branch names may legally contain a double quote, which would otherwise truncate the attribute.
 function escapeHtml(text: string): string {
   const div = document.createElement('div')
   div.textContent = text
-  return div.innerHTML
+  return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
