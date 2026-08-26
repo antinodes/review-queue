@@ -195,12 +195,19 @@ export function renderStacks(container: HTMLElement, stacks: StackGroup[], theme
   }
 }
 
-// A rung with no visible parent still shows the trunk marker; deeper rungs indent one step per
-// level so a branching stack doesn't read as a single line.
-function railFor(member: StackMember, index: number): string {
-  if (index === 0) return '●'
-  const indent = '&nbsp;'.repeat(Math.max(0, member.depth - 1) * 2)
-  return `${indent}└`
+// Flush, not indented by depth: the position cell is a fixed 56px, so a per-level indent ran
+// deep rungs straight into the PR column.
+function railFor(index: number): string {
+  return index === 0 ? '●' : '└'
+}
+
+// Who you'd be reviewing. Most stacks are one person; a handoff or a co-authored chain is worth
+// seeing before you open it, so name up to three and count the rest.
+function authorsFor(stack: StackGroup): string {
+  const logins = [...new Set(stack.members.map((m) => m.pr.author))]
+  const shown = logins.slice(0, 3).map((login) => `@${escapeHtml(login)}`).join(', ')
+  const overflow = logins.length - 3
+  return overflow > 0 ? `${shown} +${overflow}` : shown
 }
 
 function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
@@ -228,6 +235,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     <div class="stack-id">
       <span class="stack-repo">${escapeHtml(stack.repo)}</span>
       <span class="stack-label">${escapeHtml(stack.label)}</span>
+      <span class="stack-authors">${authorsFor(stack)}</span>
       <span class="stack-meta">${meta}</span>
     </div>
     <button type="button" class="stack-cmd-btn" data-cmd="${escapeHtml(stack.rebaseCommand)}" title="${escapeHtml(stack.rebaseCommand)}">${stack.native ? 'copy rebase' : 'copy stack init'}</button>`
@@ -255,9 +263,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     row.className = index === 0 ? 'stack-row stack-bottom' : 'stack-row'
     if (isCIInFlight(pr.ciState)) row.classList.add(isStalledBuild(pr) ? 'stalled' : 'building')
     row.innerHTML = [
-      // Indent by tree depth: siblings off one rung sit level with each other rather than
-      // implying that the row above is what this one branched from.
-      `<td class="stack-pos-cell"><span class="stack-rail">${railFor(member, index)}</span>${position}</td>`,
+      `<td class="stack-pos-cell"><span class="stack-pos"><span class="stack-rail">${railFor(index)}</span><span class="stack-num">${position}</span></span></td>`,
       `<td class="pr-cell"><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number}</a>` +
         (pr.headRefName ? ` <button type="button" class="branch-btn" data-branch="${escapeHtml(pr.headRefName)}" aria-label="Copy branch ${escapeHtml(pr.headRefName)}">⎇</button>` : '') + '</td>',
       renderTypeTd(type, theme),
