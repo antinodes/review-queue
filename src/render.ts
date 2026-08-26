@@ -201,6 +201,15 @@ function railFor(index: number): string {
   return index === 0 ? '●' : '└'
 }
 
+// Who you'd be reviewing. Most stacks are one person; a handoff or a co-authored chain is worth
+// seeing before you open it, so name up to three and count the rest.
+function authorsFor(stack: StackGroup): string {
+  const logins = [...new Set(stack.members.map((m) => m.pr.author))]
+  const shown = logins.slice(0, 3).map((login) => `@${escapeHtml(login)}`).join(', ')
+  const overflow = logins.length - 3
+  return overflow > 0 ? `${shown} +${overflow}` : shown
+}
+
 function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
   const card = document.createElement('div')
   card.className = 'stack-card'
@@ -226,6 +235,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     <div class="stack-id">
       <span class="stack-repo">${escapeHtml(stack.repo)}</span>
       <span class="stack-label">${escapeHtml(stack.label)}</span>
+      <span class="stack-authors">${authorsFor(stack)}</span>
       <span class="stack-meta">${meta}</span>
     </div>
     <button type="button" class="stack-cmd-btn" data-cmd="${escapeHtml(stack.rebaseCommand)}" title="${escapeHtml(stack.rebaseCommand)}">${stack.native ? 'copy rebase' : 'copy stack init'}</button>`
