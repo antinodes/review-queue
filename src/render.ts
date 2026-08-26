@@ -253,7 +253,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     row.className = index === 0 ? 'stack-row stack-bottom' : 'stack-row'
     if (isCIInFlight(pr.ciState)) row.classList.add(isStalledBuild(pr) ? 'stalled' : 'building')
     row.innerHTML = [
-      `<td class="stack-pos-cell"><span class="stack-rail">${railFor(index)}</span>${position}</td>`,
+      `<td class="stack-pos-cell"><span class="stack-pos"><span class="stack-rail">${railFor(index)}</span><span class="stack-num">${position}</span></span></td>`,
       `<td class="pr-cell"><a href="${pr.url}" target="_blank" rel="noopener">#${pr.number}</a>` +
         (pr.headRefName ? ` <button type="button" class="branch-btn" data-branch="${escapeHtml(pr.headRefName)}" aria-label="Copy branch ${escapeHtml(pr.headRefName)}">⎇</button>` : '') + '</td>',
       renderTypeTd(type, theme),

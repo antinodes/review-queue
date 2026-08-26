@@ -695,7 +695,11 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 #content .stack-table .state-cell { width: 132px; text-align: left; }
 /* Brutalist's monospace overflows the shared 90px days column and the card clips it. */
 #content .stack-table .days-cell { width: 120px; }
-.stack-rail { color: var(--text-muted); opacity: 0.55; margin-right: 4px; }
+/* Rail pinned left, number right: sharing one right-aligned line pushed the rail off-column
+   as soon as a stack reached a two-digit position. */
+.stack-pos { display: flex; align-items: baseline; gap: 4px; }
+.stack-num { flex: 1; text-align: right; }
+.stack-rail { color: var(--text-muted); opacity: 0.55; }
 
 /* The bottom of the stack is the only one that can merge next — give it the visual anchor. */
 .stack-row.stack-bottom { background: rgba(63, 185, 80, 0.05); }
