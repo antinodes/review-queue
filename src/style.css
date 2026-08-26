@@ -163,12 +163,12 @@ td a:hover { text-decoration: underline; }
 #content table .pr-cell { text-align: right; width: 110px; }
 #content table .type-cell { text-align: center; }
 #content table .title-cell { text-align: left; }
-#content table .threads-cell { text-align: right; width: 80px; }
 #content table .ci-cell { text-align: center; width: 100px; }
 #content table .author-cell { text-align: left; width: 140px; }
 #content table .base-cell { text-align: left; width: 100px; }
 #content table .deployed-cell { text-align: left; width: 170px; }
 #content table .version-cell { text-align: left; width: 90px; }
+#content table .reason-cell { text-align: left; width: 180px; }
 #content table .days-cell { text-align: right; width: 90px; }
 
 /* ── Type badges (default) ── */
@@ -181,7 +181,6 @@ td a:hover { text-decoration: underline; }
 
 .title-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .days-cell { white-space: nowrap; color: var(--text-muted); }
-.threads-cell { color: var(--yellow); font-weight: 600; }
 
 /* ── Branch copy button ── */
 .branch-btn {
@@ -230,28 +229,40 @@ td a:hover { text-decoration: underline; }
 
 /* ── Building row indicator ── */
 tr.building { box-shadow: inset 3px 0 0 var(--yellow); }
+tr.stalled { box-shadow: inset 3px 0 0 var(--red); }
 
 /* ── Merged row indicator ── */
 tr.merged { box-shadow: inset 3px 0 0 var(--merged); opacity: 0.78; }
 tr.merged:hover { opacity: 1; }
-.base-cell { color: var(--text-muted); font-size: 12px; }
+.base-cell { color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deployed-cell { font-size: 11px; }
-.env-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.env-chip {
+.env-chips, .state-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.env-chip, .state-pill {
   padding: 1px 6px;
   border: 1px solid var(--border); border-radius: 10px;
-  background: var(--surface); color: var(--text);
+  background: var(--surface);
   font-size: 11px; font-weight: 500;
-  text-decoration: none;
 }
+.env-chip { color: var(--text); text-decoration: none; }
 .env-chip:hover { border-color: var(--text-muted); color: var(--link); }
 .env-empty { color: var(--text-muted); }
 .version-cell { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.state-pill { white-space: nowrap; }
+.state-pill.conflicts { color: var(--red); border-color: var(--red); text-decoration: none; }
+a.state-pill.conflicts:hover { text-decoration: underline; }
+.state-pill.threads { color: var(--yellow); border-color: var(--yellow); }
+a.thread-link { text-decoration: none; color: inherit; }
+a.thread-link:hover { text-decoration: underline; }
+.title-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.inline-pill { flex-shrink: 0; }
 
 /* ── CI status ── */
 .ci-pass { color: var(--green); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .ci-fail { color: var(--red); font-size: 11px; font-weight: 600; text-transform: uppercase; }
 .ci-pending { color: var(--yellow); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.ci-none { color: var(--text-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.ci-stalled { color: var(--red); font-size: 11px; font-weight: 700; text-transform: uppercase; white-space: nowrap; cursor: help; }
 .ci-unknown { color: var(--text-muted); }
 
 /* ── Summary ── */
@@ -361,7 +372,6 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="brutalist"] .type-fix { background: #ff0000; color: #fff; }
 [data-theme="brutalist"] .type-build { background: #888; color: #fff; }
 [data-theme="brutalist"] .type-other { background: #888; color: #fff; }
-[data-theme="brutalist"] .threads-cell { color: #ff0000; font-weight: 700; }
 [data-theme="brutalist"] .days-cell { color: #444; font-weight: 600; }
 [data-theme="brutalist"] footer { border-top: 4px solid #000; font-family: 'Arial Black', Arial, sans-serif; font-size: 12px; color: #000; padding-top: 12px; }
 [data-theme="brutalist"] #refresh-btn, [data-theme="brutalist"] #signout-btn { background: #fff; border: 3px solid #000; border-radius: 0; color: #000; }
@@ -452,7 +462,6 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="newspaper"] .type-fix { background: none; color: #8b0000; }
 [data-theme="newspaper"] .type-build { background: none; color: #8a7e6e; }
 [data-theme="newspaper"] .type-other { background: none; color: #8a7e6e; }
-[data-theme="newspaper"] .threads-cell { color: #8b0000; }
 [data-theme="newspaper"] .days-cell { color: #6b5e4f; }
 [data-theme="newspaper"] footer { border-top: 2px solid #1a1a1a; font-size: 12px; color: #6b5e4f; font-family: 'Source Sans 3', sans-serif; }
 [data-theme="newspaper"] #refresh-btn, [data-theme="newspaper"] #signout-btn { background: transparent; border: 1px solid #c8bfa8; color: #6b5e4f; border-radius: 0; }
@@ -513,13 +522,13 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="rpg"] .pr-cell { width: 56px; }
 [data-theme="rpg"] .type-cell { width: 36px; }
 [data-theme="rpg"] .days-cell { width: 90px; }
-[data-theme="rpg"] .threads-cell { width: 64px; }
 [data-theme="rpg"] .ci-cell { width: 48px; }
 [data-theme="rpg"] .title-cell { width: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-theme="rpg"] .author-cell { width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-theme="rpg"] .base-cell { width: 100px; }
 [data-theme="rpg"] .deployed-cell { width: 170px; }
 [data-theme="rpg"] .version-cell { width: 90px; }
+[data-theme="rpg"] .reason-cell { width: 180px; }
 /* Corner ornaments */
 [data-theme="rpg"] section::before,
 [data-theme="rpg"] section::after {
@@ -582,7 +591,6 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="rpg"] .type-other { color: #8a6010; background: none; }
 
 /* RPG hazard badges */
-[data-theme="rpg"] .threads-cell { text-align: center; color: inherit; }
 [data-theme="rpg"] .hazard {
   display: inline-flex; align-items: center; gap: 0.3rem;
   font-family: 'Cinzel', serif; font-size: 0.72rem; font-weight: 700;
@@ -628,3 +636,100 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 [data-theme="rpg"] .tab-btn.active { color: #f5c842; background: rgba(201,149,42,0.1); border-color: #8a6010; }
 [data-theme="rpg"] .tab-btn:hover { color: #c9952a; }
 [data-theme="rpg"] .toolbar { border-bottom: 2px solid #8a6010; }
+
+/* ── Stacks ── */
+
+.stack-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.stack-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.stack-id { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.stack-repo { color: var(--text-muted); font-size: 12px; }
+.stack-label { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+.stack-meta { color: var(--text-muted); font-size: 11px; }
+
+.stack-inferred {
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stack-behind { color: var(--red); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+
+.stack-cmd-btn {
+  background: transparent;
+  color: var(--link);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.stack-cmd-btn:hover { border-color: var(--link); }
+.stack-cmd-btn.copied { color: var(--green); border-color: var(--green); }
+.stack-cmd-btn.copy-failed { color: var(--red); border-color: var(--red); }
+
+.stack-table-wrap { overflow-x: auto; }
+.stack-table { margin-bottom: 0; min-width: 560px; }
+#content .stack-table .stack-pos-cell { width: 56px; text-align: right; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+#content .stack-table .state-cell { width: 132px; text-align: left; }
+/* Brutalist's monospace overflows the shared 90px days column and the card clips it. */
+#content .stack-table .days-cell { width: 120px; }
+.stack-rail { color: var(--text-muted); opacity: 0.55; margin-right: 4px; }
+
+/* The bottom of the stack is the only one that can merge next — give it the visual anchor. */
+.stack-row.stack-bottom { background: rgba(63, 185, 80, 0.05); }
+.stack-row.stack-bottom .stack-pos-cell { color: var(--green); }
+.stack-row.stack-bottom .stack-rail { color: var(--green); opacity: 1; }
+
+.chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.chip-ready { color: var(--green); background: rgba(63, 185, 80, 0.12); }
+.chip-waiting { color: var(--text-muted); background: rgba(125, 133, 144, 0.12); }
+.chip-blocked { color: var(--yellow); background: rgba(210, 153, 34, 0.12); }
+.chip-fail { color: var(--red); background: rgba(248, 81, 73, 0.12); }
+.chip-building { color: var(--link); background: rgba(88, 166, 255, 0.12); }
+.chip-draft { color: var(--text-muted); background: rgba(125, 133, 144, 0.12); }
+.chip-needs-review { color: var(--link); background: rgba(88, 166, 255, 0.12); }
+.chip-changes { color: var(--red); background: rgba(248, 81, 73, 0.12); }
+a.chip { text-decoration: none; }
+a.chip:hover { text-decoration: underline; }
+
+.stack-hidden-note { color: var(--text-muted); font-size: 11px; font-style: italic; padding: 6px 12px; margin: 0; border-top: 1px solid var(--border); }
+
+[data-theme="dense"] .stack-card { border-color: #2e2e38; }
+[data-theme="dense"] .stack-header { padding: 6px 10px; }
+[data-theme="dense"] .stack-label { font-size: 12px; }
+
+[data-theme="brutalist"] .stack-card { border: 4px solid #000; border-radius: 0; }
+[data-theme="brutalist"] .stack-header { border-bottom: 4px solid #000; }
+[data-theme="brutalist"] .stack-cmd-btn { border: 2px solid #000; border-radius: 0; color: #000; font-weight: 700; }
+[data-theme="brutalist"] .chip { border-radius: 0; }

@@ -22,6 +22,40 @@ export interface PRDetail {
   reviewDecision: string | null
   viewerReviewState: string | null
   timelineEvents: TimelineEvent[]
+  /** Null unless the PR belongs to a native GitHub stack (public preview, same-repo only). */
+  stack: StackRef | null
+  /** When the still-running part of CI kicked off, for spotting a build that has hung. */
+  buildStartedAt: string | null
+  /** BEHIND means the head branch needs a restack. UNKNOWN on a cold PR — GitHub computes it lazily. */
+  mergeStateStatus: string | null
+  /**
+   * CONFLICTING | MERGEABLE | UNKNOWN. Kept alongside mergeStateStatus because that field is a
+   * single enum: a conflicted draft reports DRAFT and would hide the conflict. This one doesn't.
+   */
+  mergeable: string | null
+  /**
+   * Owner/name of the repo the head branch lives in. On a fork this differs from the PR's own
+   * repo, and fork head branches are routinely named `main` or `patch-1`, so anything keyed on a
+   * bare branch name has to qualify it with this or it will collide.
+   */
+  headRepo: string
+}
+
+export interface StackRef {
+  /** Stable per-repo stack identifier — also what `gh stack checkout` accepts. */
+  number: number
+  size: number
+  /** 1 is closest to the base branch. */
+  position: number
+  /** Every rung GitHub knows about, merged ones included, ascending by position. */
+  entries: StackEntry[]
+}
+
+export interface StackEntry {
+  position: number
+  number: number
+  /** A merged or closed rung is settled: nothing above it is still waiting on it. */
+  settled: boolean
 }
 
 export interface RepoDeployment {
@@ -92,6 +126,9 @@ interface RawPRDetail {
     nodes: Array<{
       commit: {
         statusCheckRollup: { state: string } | null
+        checkSuites: {
+          nodes: Array<{ status: string; createdAt: string; checkRuns: { totalCount: number } }>
+        }
       }
     }>
   }
@@ -105,6 +142,15 @@ interface RawPRDetail {
   timelineItems: {
     nodes: Array<{ __typename: string; createdAt: string }>
   }
+  stack: {
+    number: number
+    size: number
+    entries: { nodes: Array<{ position: number; pullRequest: { number: number; merged: boolean; closed: boolean } }> }
+  } | null
+  stackEntry: { position: number } | null
+  mergeStateStatus: string | null
+  mergeable: string | null
+  headRepository: { nameWithOwner: string } | null
 }
 
 async function graphql<T>(token: string, query: string): Promise<T> {
@@ -191,6 +237,11 @@ function buildPRFragment(number: number): string {
         nodes {
           commit {
             statusCheckRollup { state }
+            # Suites with zero runs are apps installed on the repo that never report (they sit
+            # QUEUED forever), so only suites holding actual runs say when a build started.
+            checkSuites(first: 10) {
+              nodes { status createdAt checkRuns(first: 1) { totalCount } }
+            }
           }
         }
       }
@@ -207,6 +258,19 @@ function buildPRFragment(number: number): string {
           ... on ConvertToDraftEvent { createdAt }
         }
       }
+      mergeStateStatus
+      mergeable
+      headRepository { nameWithOwner }
+      stack {
+        number
+        size
+        # Entries keep merged rungs at their original positions, so size/position arithmetic
+        # alone can't say what is still below you. Read the entries instead.
+        entries(first: 50) {
+          nodes { position pullRequest { number merged closed } }
+        }
+      }
+      stackEntry { position }
     }`
 }
 
@@ -263,12 +327,21 @@ export async function fetchRepoDeployments(token: string, repo: string, sinceMs:
   return out
 }
 
-export async function fetchPRDetails(
-  token: string,
-  repo: string,
-  prNumbers: number[],
-  viewerLogin?: string,
-): Promise<PRDetail[]> {
+// Oldest suite that is still going and has runs in it. Empty suites are ignored: several apps
+// register a suite per push and leave it QUEUED forever, which would read as a hung build.
+function earliestRunningSuite(
+  suites: Array<{ status: string; createdAt: string; checkRuns: { totalCount: number } }>,
+): string | null {
+  const running = suites
+    .filter((s) => s.status !== 'COMPLETED' && s.checkRuns.totalCount > 0)
+    .map((s) => s.createdAt)
+    .sort()
+  return running[0] ?? null
+}
+
+type RepoPRData = Record<`pr${number}`, RawPRDetail>
+
+async function fetchRepoPRs(token: string, repo: string, prNumbers: number[]): Promise<RepoPRData> {
   const [owner, name] = repo.split('/')
   const fragments = prNumbers.map(buildPRFragment).join('\n')
   const query = `query {
@@ -276,14 +349,37 @@ export async function fetchPRDetails(
       ${fragments}
     }
   }`
-
   const json = await graphql<GraphQLResponse>(token, query)
+  return json.data!.repository
+}
 
-  const repoData = json.data!.repository
+export async function fetchPRDetails(
+  token: string,
+  repo: string,
+  prNumbers: number[],
+  viewerLogin?: string,
+): Promise<PRDetail[]> {
+  const repoData = await fetchRepoPRs(token, repo, prNumbers)
+
+  // GitHub computes mergeability lazily and answers UNKNOWN while it works, so a cold PR's
+  // conflicts are invisible on first load. Asking a second time settles it; one retry is enough.
+  const unknown = prNumbers.filter((n) => repoData[`pr${n}`]?.mergeable === 'UNKNOWN')
+  if (unknown.length > 0) {
+    try {
+      const retried = await fetchRepoPRs(token, repo, unknown)
+      for (const n of unknown) {
+        if (retried[`pr${n}`]) repoData[`pr${n}`] = retried[`pr${n}`]
+      }
+    } catch {
+      // A failed retry just leaves the UNKNOWN reading in place — never fail the whole refresh.
+    }
+  }
+
   return prNumbers.map((num) => {
     const pr = repoData[`pr${num}`]
     const commitNode = pr.ciStatus.nodes[0]
     const ciState = commitNode?.commit?.statusCheckRollup?.state ?? null
+    const buildStartedAt = earliestRunningSuite(commitNode?.commit?.checkSuites?.nodes ?? [])
     const unresolvedThreads = pr.reviewThreads.nodes.filter((t) => !t.isResolved).length
 
     const timelineEvents: TimelineEvent[] = pr.timelineItems.nodes.map((n) => ({
@@ -296,6 +392,22 @@ export async function fetchPRDetails(
       : undefined
     const viewerReviewState = viewerReview?.state ?? null
 
-    return { number: num, headRefName: pr.headRefName, baseRefName: pr.baseRefName, mergedAt: pr.mergedAt, mergeCommitOid: pr.mergeCommit?.oid ?? null, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision, viewerReviewState, timelineEvents }
+    // Both halves are needed: stack carries size and entries, stackEntry carries this PR's slot.
+    const stack: StackRef | null = pr.stack && pr.stackEntry
+      ? {
+          number: pr.stack.number,
+          size: pr.stack.size,
+          position: pr.stackEntry.position,
+          entries: pr.stack.entries.nodes
+            .map((e) => ({
+              position: e.position,
+              number: e.pullRequest.number,
+              settled: e.pullRequest.merged || e.pullRequest.closed,
+            }))
+            .sort((a, b) => a.position - b.position),
+        }
+      : null
+
+    return { number: num, headRefName: pr.headRefName, baseRefName: pr.baseRefName, mergedAt: pr.mergedAt, mergeCommitOid: pr.mergeCommit?.oid ?? null, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision, viewerReviewState, timelineEvents, stack, buildStartedAt, mergeStateStatus: pr.mergeStateStatus ?? null, mergeable: pr.mergeable ?? null, headRepo: pr.headRepository?.nameWithOwner ?? '' }
   })
 }

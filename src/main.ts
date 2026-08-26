@@ -2,7 +2,8 @@ import { searchReviewRequested, searchAuthored, searchMergedAuthored, fetchPRDet
 import type { SearchPR, RepoDeployment, PRDetail } from './github.ts'
 import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, classifyMergedPRs, isDependabot, lastBusinessDayCutoff } from './classify.ts'
 import type { ReviewResult, MyPRsResult, DependabotResult, PRMergedMetadata } from './classify.ts'
-import { renderSection, renderSummary, renderError } from './render.ts'
+import type { StackGroup } from './stacks.ts'
+import { renderSection, renderStacks, renderSummary, renderError } from './render.ts'
 import { getToken, saveToken, clearToken } from './token.ts'
 import { beginOAuth, handleOAuthCallback, oauthEnabled, patEnabled } from './auth.ts'
 import { themes, getTheme, saveTheme, applyTheme } from './themes.ts'
@@ -72,16 +73,22 @@ function renderActiveTab(): void {
 
   if (activeTab === 'reviews' && cachedReviews) {
     const r = cachedReviews
+    setText('reviews-stacks-h', t.sections.reviewStacks)
     setText('reviews-ready-h', t.sections.ready)
     setText('reviews-blocked-h', t.sections.blocked)
+    toggleSection('reviews-stacks', r.stacks.length > 0)
+    renderStacks($('reviews-stacks'), r.stacks, t)
     renderSection($('reviews-ready'), r.ready, t)
-    renderSection($('reviews-blocked'), r.blocked, t, { showThreads: true })
+    renderSection($('reviews-blocked'), r.blocked, t, { showBlockReasons: true })
+    const stackedReviews = countStacked(r.stacks)
+    const stackSuffix = stackedReviews > 0 ? `, ${stackedReviews} stacked` : ''
     renderSummary($('reviews-summary'),
-      `${r.ready.length} ready, ${r.blocked.length} blocked, ${r.skippedCount} skipped`)
+      `${r.ready.length} ready, ${r.blocked.length} blocked${stackSuffix}, ${r.skippedCount} skipped`)
   }
 
   if (activeTab === 'myPRs' && cachedMyPRs) {
     const m = cachedMyPRs
+    setText('my-stacks-h', t.sections.stacks)
     setText('my-ready-h', t.sections.readyToMerge)
     setText('my-needsReview-h', t.sections.needsReview)
     setText('my-blocked-h', t.sections.myBlocked)
@@ -89,17 +96,21 @@ function renderActiveTab(): void {
     setText('my-failing-h', t.sections.failingCI)
     setText('my-draft-h', t.sections.draft)
     setText('my-merged-h', t.sections.recentlyMerged)
+    toggleSection('my-stacks', m.stacks.length > 0)
+    renderStacks($('my-stacks'), m.stacks, t)
     renderSection($('my-ready'), m.readyToMerge, t, { showAuthor: false })
     renderSection($('my-needsReview'), m.needsReview, t, { showAuthor: false })
-    renderSection($('my-blocked'), m.blocked, t, { showThreads: true, showAuthor: false })
+    renderSection($('my-blocked'), m.blocked, t, { showBlockReasons: true, showAuthor: false })
     renderSection($('my-building'), m.building, t, { showCI: true, showAuthor: false })
     renderSection($('my-failing'), m.failing, t, { showCI: true, showAuthor: false })
     renderSection($('my-draft'), m.drafts, t, { showAuthor: false })
     renderSection($('my-merged'), m.recentlyMerged, t, { showAuthor: false, showBaseBranch: true, showDeployedEnvs: true, showVersion: true, mergedColumn: true })
-    const total = m.readyToMerge.length + m.needsReview.length + m.blocked.length + m.building.length + m.failing.length + m.drafts.length
+    const stacked = countStacked(m.stacks)
+    const total = m.readyToMerge.length + m.needsReview.length + m.blocked.length + m.building.length + m.failing.length + m.drafts.length + stacked
+    const stackPrefix = m.stacks.length > 0 ? `${stacked} in ${m.stacks.length} stack${m.stacks.length === 1 ? '' : 's'}, ` : ''
     const mergedSuffix = m.recentlyMerged.length > 0 ? ` · ${m.recentlyMerged.length} recently merged` : ''
     renderSummary($('my-summary'),
-      `${total} open — ${m.readyToMerge.length} ready to merge, ${m.needsReview.length} needs review, ${m.blocked.length} blocked, ${m.building.length} building, ${m.failing.length} failing, ${m.drafts.length} draft${mergedSuffix}`)
+      `${total} open — ${stackPrefix}${m.readyToMerge.length} ready to merge, ${m.needsReview.length} needs review, ${m.blocked.length} blocked, ${m.building.length} building, ${m.failing.length} failing, ${m.drafts.length} draft${mergedSuffix}`)
   }
 
   if (activeTab === 'dependabot' && cachedDependabot) {
@@ -109,7 +120,7 @@ function renderActiveTab(): void {
     setText('dep-building-h', t.sections.depBuilding)
     setText('dep-failing-h', t.sections.depFailing)
     renderSection($('dep-ready'), d.ready, t, { showAuthor: false })
-    renderSection($('dep-blocked'), d.blocked, t, { showThreads: true, showAuthor: false })
+    renderSection($('dep-blocked'), d.blocked, t, { showBlockReasons: true, showAuthor: false })
     renderSection($('dep-building'), d.building, t, { showCI: true, showAuthor: false })
     renderSection($('dep-failing'), d.failing, t, { showCI: true, showAuthor: false })
     const total = d.ready.length + d.blocked.length + d.building.length + d.failing.length
@@ -120,6 +131,23 @@ function renderActiveTab(): void {
 
 function setText(id: string, text: string): void {
   $(id).textContent = text
+}
+
+function countStacked(stacks: StackGroup[]): number {
+  return stacks.reduce((sum, s) => sum + s.members.length, 0)
+}
+
+// Stacked PRs are lifted out of `ready` but are still waiting on you, so the badge counts them
+// too. Only unresolved threads make a review PR someone else's turn.
+function reviewableCount(r: ReviewResult): number {
+  const stacked = r.stacks.reduce(
+    (sum, s) => sum + s.members.filter((m) => m.pr.unresolvedThreads === 0).length, 0)
+  return r.ready.length + stacked
+}
+
+// Hide the whole <section> so an empty Stacks heading doesn't sit above every other tab.
+function toggleSection(containerId: string, visible: boolean): void {
+  $(containerId).closest('section')?.classList.toggle('hidden', !visible)
 }
 
 // ── Data fetching ──
@@ -297,7 +325,7 @@ async function loadQueue(token: string): Promise<void> {
 
     renderActiveTab()
     updateTimestamp()
-    updateBadge(cachedReviews.ready.length)
+    updateBadge(reviewableCount(cachedReviews))
   } catch (err) {
     $('loading').classList.add('hidden')
     $('progress-bar').classList.remove('active')
