@@ -1,4 +1,5 @@
 import type { ClassifiedPR } from './classify.ts'
+import { isCIFailing, isCIInFlight } from './classify.ts'
 import type { StackEntry } from './github.ts'
 
 export interface StackMember {
@@ -23,7 +24,19 @@ export interface StackGroup {
   members: StackMember[]
   /** Rungs that are still open but absent from what we render (not yours, already approved, …). */
   hiddenCount: number
+  /** Rungs GitHub would land in one "merge up to here", bottom-up. Inferred stacks merge one at a time, so at most the root. */
+  mergeBatch: number[]
   rebaseCommand: string
+}
+
+export function isRungMergeable(pr: ClassifiedPR): boolean {
+  return pr.bucket !== 'draft'
+    && !pr.hasConflicts
+    && !isCIInFlight(pr.ciState)
+    && !isCIFailing(pr.ciState)
+    && pr.unresolvedThreads === 0
+    && pr.reviewDecision === 'APPROVED'
+    && pr.mergeStateStatus !== 'BLOCKED'
 }
 
 export function prKey(repo: string, number: number): string {
@@ -109,6 +122,7 @@ function buildNativeStacks(repo: string, prs: ClassifiedPR[], visible: Set<strin
       native: true,
       members,
       hiddenCount,
+      mergeBatch: mergeBatchFor(entries, all),
       rebaseCommand: `gh stack checkout ${number} && gh stack rebase && gh stack push`,
     })
   }
@@ -123,6 +137,19 @@ function nearestBlockingRung(entries: StackEntry[], position: number): number | 
     if (e.position < position && !e.settled) return e.number
   }
   return null
+}
+
+// A rung we hold no data for ends the run: we can't vouch for it.
+function mergeBatchFor(entries: StackEntry[], known: ClassifiedPR[]): number[] {
+  const byNumber = new Map(known.map((p) => [p.number, p]))
+  const batch: number[] = []
+  for (const entry of entries) {
+    if (entry.settled) continue
+    const pr = byNumber.get(entry.number)
+    if (!pr || !isRungMergeable(pr)) break
+    batch.push(entry.number)
+  }
+  return batch
 }
 
 // ── Inferred stacks (branch-base chains, for PRs GitHub doesn't track as a stack) ──
@@ -164,6 +191,7 @@ function inferStacks(repo: string, prs: ClassifiedPR[], visible: Set<string>): S
       native: false,
       members,
       hiddenCount: chain.length - members.length,
+      mergeBatch: isRungMergeable(root) ? [root.number] : [],
       rebaseCommand: `gh stack init ${chain.map((m) => m.pr.headRefName).join(' ')}`,
     })
   }

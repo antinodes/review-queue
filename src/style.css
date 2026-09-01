@@ -702,10 +702,10 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 .stack-num { flex: 1; text-align: right; }
 .stack-rail { color: var(--text-muted); opacity: 0.55; }
 
-/* The bottom of the stack is the only one that can merge next — give it the visual anchor. */
-.stack-row.stack-bottom { background: rgba(63, 185, 80, 0.05); }
 .stack-row.stack-bottom .stack-pos-cell { color: var(--green); }
 .stack-row.stack-bottom .stack-rail { color: var(--green); opacity: 1; }
+.stack-row.stack-mergeable { background: rgba(63, 185, 80, 0.05); }
+.stack-batch { color: var(--green); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
 
 .chip {
   display: inline-block;
