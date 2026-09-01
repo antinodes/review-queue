@@ -148,11 +148,8 @@ function chipLink(cls: string, href: string, title: string, label: string): stri
   return `<a class="chip ${cls}" href="${href}" target="_blank" rel="noopener" title="${title}">${escapeHtml(label)}</a>`
 }
 
-// One chip per row: the single thing standing between this rung and a merge. Anything this rung
-// needs done to itself — conflicts, a red or running build, open threads, a review — comes first,
-// whatever its position: a thread on rung three is just as much someone's turn as one on rung
-// one. "waiting on #N" is reserved for a rung with nothing left to do that is stuck behind one
-// that has. "mergeable" is the last resort and must stay that way — it claims nothing is left.
+// One chip per row. The rung's own work comes first whatever its position; "waiting on #N" is
+// only for a rung with nothing left to do. "mergeable" must stay last — it claims nothing is left.
 function stateChip(member: StackMember, stack: StackGroup): string {
   const pr = member.pr
   if (pr.bucket === 'draft') return '<span class="chip chip-draft">draft</span>'
@@ -171,8 +168,6 @@ function stateChip(member: StackMember, stack: StackGroup): string {
   if (pr.reviewDecision !== 'APPROVED') return '<span class="chip chip-needs-review">needs review</span>'
   // Approved and green but still gated — required checks, CODEOWNERS, or a protection rule.
   if (pr.mergeStateStatus === 'BLOCKED') return '<span class="chip chip-blocked">blocked</span>'
-  // A native stack merges every rung in the batch together, so being above the bottom is no
-  // longer a reason to wait as long as everything below is in the batch too.
   if (stack.mergeBatch.includes(pr.number)) return '<span class="chip chip-ready">mergeable</span>'
   if (member.parentNumber !== null) {
     return `<span class="chip chip-waiting">waiting on #${member.parentNumber}</span>`
@@ -214,8 +209,6 @@ function authorsFor(stack: StackGroup): string {
   return overflow > 0 ? `${shown} +${overflow}` : shown
 }
 
-// Only worth a word when it changes what you'd do: one mergeable rung is the ordinary case and
-// the row chip already says so. Two or more means a single "merge up to here" lands them all.
 function mergeBatchNote(stack: StackGroup): string {
   const n = stack.mergeBatch.length
   if (n < 2) return ''
