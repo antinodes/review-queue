@@ -148,17 +148,15 @@ function chipLink(cls: string, href: string, title: string, label: string): stri
   return `<a class="chip ${cls}" href="${href}" target="_blank" rel="noopener" title="${title}">${escapeHtml(label)}</a>`
 }
 
-// One chip per row: the single thing standing between this rung and a merge. Precedence mirrors
-// classifyMyPRs so a stack row reads the same as the bucket it would have landed in, except that
-// conflicts outrank "waiting" — those need hands on them whatever the rung's position.
-// "mergeable" is the last resort and must stay that way — it claims nothing is left to do.
-function stateChip(member: StackMember): string {
+// One chip per row: the single thing standing between this rung and a merge. Anything this rung
+// needs done to itself — conflicts, a red or running build, open threads, a review — comes first,
+// whatever its position: a thread on rung three is just as much someone's turn as one on rung
+// one. "waiting on #N" is reserved for a rung with nothing left to do that is stuck behind one
+// that has. "mergeable" is the last resort and must stay that way — it claims nothing is left.
+function stateChip(member: StackMember, stack: StackGroup): string {
   const pr = member.pr
   if (pr.bucket === 'draft') return '<span class="chip chip-draft">draft</span>'
   if (pr.hasConflicts) return chipLink('chip-fail', `${pr.url}/conflicts`, 'Open conflict resolver on GitHub', 'conflicts')
-  if (member.parentNumber !== null) {
-    return `<span class="chip chip-waiting">waiting on #${member.parentNumber}</span>`
-  }
   if (isCIInFlight(pr.ciState)) {
     if (isStalledBuild(pr)) return `<span class="chip chip-fail">stalled ${formatDuration(pr.buildMinutes!)}</span>`
     return '<span class="chip chip-building">building</span>'
@@ -173,6 +171,12 @@ function stateChip(member: StackMember): string {
   if (pr.reviewDecision !== 'APPROVED') return '<span class="chip chip-needs-review">needs review</span>'
   // Approved and green but still gated — required checks, CODEOWNERS, or a protection rule.
   if (pr.mergeStateStatus === 'BLOCKED') return '<span class="chip chip-blocked">blocked</span>'
+  // A native stack merges every rung in the batch together, so being above the bottom is no
+  // longer a reason to wait as long as everything below is in the batch too.
+  if (stack.mergeBatch.includes(pr.number)) return '<span class="chip chip-ready">mergeable</span>'
+  if (member.parentNumber !== null) {
+    return `<span class="chip chip-waiting">waiting on #${member.parentNumber}</span>`
+  }
   return '<span class="chip chip-ready">mergeable</span>'
 }
 
@@ -210,6 +214,15 @@ function authorsFor(stack: StackGroup): string {
   return overflow > 0 ? `${shown} +${overflow}` : shown
 }
 
+// Only worth a word when it changes what you'd do: one mergeable rung is the ordinary case and
+// the row chip already says so. Two or more means a single "merge up to here" lands them all.
+function mergeBatchNote(stack: StackGroup): string {
+  const n = stack.mergeBatch.length
+  if (n < 2) return ''
+  const top = stack.mergeBatch[n - 1]
+  return `<span class="stack-batch" title="GitHub can merge these together — merge #${top} and every rung below it lands with it">${n} mergeable together</span>`
+}
+
 function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
   const card = document.createElement('div')
   card.className = 'stack-card'
@@ -227,6 +240,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     `${total} PRs`,
     stack.native ? '' : '<span class="stack-inferred" title="Inferred from branch bases — GitHub does not track this as a stack">inferred</span>',
     restackWarning,
+    mergeBatchNote(stack),
   ].filter(Boolean).join(' · ')
 
   const header = document.createElement('div')
@@ -261,6 +275,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     const position = pr.stack ? pr.stack.position : index + 1
     const row = document.createElement('tr')
     row.className = index === 0 ? 'stack-row stack-bottom' : 'stack-row'
+    if (stack.mergeBatch.includes(pr.number)) row.classList.add('stack-mergeable')
     if (isCIInFlight(pr.ciState)) row.classList.add(isStalledBuild(pr) ? 'stalled' : 'building')
     row.innerHTML = [
       `<td class="stack-pos-cell"><span class="stack-pos"><span class="stack-rail">${railFor(index)}</span><span class="stack-num">${position}</span></span></td>`,
@@ -269,7 +284,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
       renderTypeTd(type, theme),
       `<td class="title-cell">${escapeHtml(rest)}</td>`,
       `<td class="ci-cell">${ciStatusHtml(pr)}</td>`,
-      `<td class="state-cell">${stateChip(member)}</td>`,
+      `<td class="state-cell">${stateChip(member, stack)}</td>`,
       `<td class="days-cell">${pr.daysOpen}</td>`,
     ].join('')
     tbody.appendChild(row)

@@ -1,4 +1,5 @@
 import type { ClassifiedPR } from './classify.ts'
+import { isCIFailing, isCIInFlight } from './classify.ts'
 import type { StackEntry } from './github.ts'
 
 export interface StackMember {
@@ -23,7 +24,28 @@ export interface StackGroup {
   members: StackMember[]
   /** Rungs that are still open but absent from what we render (not yours, already approved, …). */
   hiddenCount: number
+  /**
+   * PR numbers GitHub would merge in one go, bottom-up. Native stacks merge "up to here": every
+   * rung from the trunk to the chosen one lands together, so the batch is the longest run of
+   * mergeable rungs starting at the bottom. Always empty for inferred stacks, which GitHub can
+   * only merge one PR at a time.
+   */
+  mergeBatch: number[]
   rebaseCommand: string
+}
+
+/**
+ * Nothing left to do on this rung itself. Its position in the stack is deliberately ignored —
+ * whether it can actually merge depends on the rungs below, which is what `mergeBatch` settles.
+ */
+export function isRungMergeable(pr: ClassifiedPR): boolean {
+  return pr.bucket !== 'draft'
+    && !pr.hasConflicts
+    && !isCIInFlight(pr.ciState)
+    && !isCIFailing(pr.ciState)
+    && pr.unresolvedThreads === 0
+    && pr.reviewDecision === 'APPROVED'
+    && pr.mergeStateStatus !== 'BLOCKED'
 }
 
 export function prKey(repo: string, number: number): string {
@@ -109,6 +131,7 @@ function buildNativeStacks(repo: string, prs: ClassifiedPR[], visible: Set<strin
       native: true,
       members,
       hiddenCount,
+      mergeBatch: mergeBatchFor(entries, all),
       rebaseCommand: `gh stack checkout ${number} && gh stack rebase && gh stack push`,
     })
   }
@@ -123,6 +146,21 @@ function nearestBlockingRung(entries: StackEntry[], position: number): number | 
     if (e.position < position && !e.settled) return e.number
   }
   return null
+}
+
+// Walk up from the trunk and stop at the first rung that can't merge. `known` includes rungs we
+// hold but don't render (link-only), since an approved-and-hidden rung still merges with the
+// batch. A rung we know nothing about ends the run: we can't vouch for it.
+function mergeBatchFor(entries: StackEntry[], known: ClassifiedPR[]): number[] {
+  const byNumber = new Map(known.map((p) => [p.number, p]))
+  const batch: number[] = []
+  for (const entry of entries) {
+    if (entry.settled) continue
+    const pr = byNumber.get(entry.number)
+    if (!pr || !isRungMergeable(pr)) break
+    batch.push(entry.number)
+  }
+  return batch
 }
 
 // ── Inferred stacks (branch-base chains, for PRs GitHub doesn't track as a stack) ──
@@ -164,6 +202,7 @@ function inferStacks(repo: string, prs: ClassifiedPR[], visible: Set<string>): S
       native: false,
       members,
       hiddenCount: chain.length - members.length,
+      mergeBatch: [],
       rebaseCommand: `gh stack init ${chain.map((m) => m.pr.headRefName).join(' ')}`,
     })
   }
