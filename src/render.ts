@@ -161,6 +161,7 @@ function chipLink(cls: string, href: string, title: string, label: string): stri
 function stateChip(member: StackMember, stack: StackGroup, reviewing: boolean): string {
   const pr = member.pr
   if (pr.bucket === 'draft') return '<span class="chip chip-draft">draft</span>'
+  if (awaitsViewer(member, reviewing)) return chipLink('chip-yours', `${pr.url}/files`, 'Waiting on your approval', 'your review')
   if (pr.hasConflicts) return chipLink('chip-fail', `${pr.url}/conflicts`, 'Open conflict resolver on GitHub', 'conflicts')
   if (isCIInFlight(pr.ciState)) {
     if (isStalledBuild(pr)) return `<span class="chip chip-fail">stalled ${formatDuration(pr.buildMinutes!)}</span>`
@@ -172,7 +173,6 @@ function stateChip(member: StackMember, stack: StackGroup, reviewing: boolean): 
     const label = `${pr.unresolvedThreads} thread${pr.unresolvedThreads === 1 ? '' : 's'}`
     return chipLink('chip-blocked', pr.url, 'Open conversation on GitHub', label)
   }
-  if (awaitsViewer(member, reviewing)) return chipLink('chip-yours', `${pr.url}/files`, 'Waiting on your approval', 'your review')
   if (pr.reviewDecision === 'CHANGES_REQUESTED') return '<span class="chip chip-changes">changes requested</span>'
   if (pr.reviewDecision !== 'APPROVED') return '<span class="chip chip-needs-review">needs review</span>'
   // Approved and green but still gated — required checks, CODEOWNERS, or a protection rule.
@@ -184,7 +184,8 @@ function stateChip(member: StackMember, stack: StackGroup, reviewing: boolean): 
   return '<span class="chip chip-ready">mergeable</span>'
 }
 
-// Review-tab rungs that aren't context are exactly the ones you haven't approved.
+// Review-tab rungs that aren't context are exactly the ones you haven't approved; the `ready`
+// bucket has already ruled out threads and red CI, and conflicts don't block a review.
 function awaitsViewer(member: StackMember, reviewing: boolean): boolean {
   return reviewing && !member.context && member.pr.bucket === 'ready'
 }

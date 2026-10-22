@@ -341,9 +341,9 @@ async function loadQueue(token: string): Promise<void> {
       fetchDetails(token, [...reviewPRs, ...authoredPRs], viewerLogin, true),
       fetchDetails(token, mergedPRs, viewerLogin, false),
     ])
-    const rungDetails = await fetchMissingRungs(token, searchedDetails, viewerLogin)
-    const stackRungs = [...rungDetails.values()].flat().map((d) => d.summary)
-    const detailsByRepo = mergeDetailMaps(mergeDetailMaps(searchedDetails, rungDetails), mergedDetails)
+    const openDetails = mergeDetailMaps(searchedDetails, await fetchMissingRungs(token, searchedDetails, viewerLogin))
+    const stackRungs = [...openDetails.values()].flat().filter((d) => d.stack).map((d) => d.summary)
+    const detailsByRepo = mergeDetailMaps(openDetails, mergedDetails)
 
     const mergedRepos = [...new Set(mergedPRs.map((p) => p.repo))]
     const deploymentsByRepo = new Map<string, RepoDeployment[]>(
