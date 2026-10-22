@@ -80,7 +80,7 @@ function renderActiveTab(): void {
     setText('reviews-ready-h', t.sections.ready)
     setText('reviews-blocked-h', t.sections.blocked)
     toggleSection('reviews-stacks', r.stacks.length > 0)
-    renderStacks($('reviews-stacks'), r.stacks, t)
+    renderStacks($('reviews-stacks'), r.stacks, t, true)
     renderSection($('reviews-ready'), r.ready, t)
     renderSection($('reviews-blocked'), r.blocked, t, { showBlockReasons: true })
     const stackedReviews = countStacked(r.stacks)

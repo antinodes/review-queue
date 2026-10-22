@@ -158,7 +158,7 @@ function chipLink(cls: string, href: string, title: string, label: string): stri
 
 // One chip per row. The rung's own work comes first whatever its position; "waiting on #N" is
 // only for a rung with nothing left to do. "mergeable" must stay last — it claims nothing is left.
-function stateChip(member: StackMember, stack: StackGroup): string {
+function stateChip(member: StackMember, stack: StackGroup, reviewing: boolean): string {
   const pr = member.pr
   if (pr.bucket === 'draft') return '<span class="chip chip-draft">draft</span>'
   if (pr.hasConflicts) return chipLink('chip-fail', `${pr.url}/conflicts`, 'Open conflict resolver on GitHub', 'conflicts')
@@ -172,6 +172,7 @@ function stateChip(member: StackMember, stack: StackGroup): string {
     const label = `${pr.unresolvedThreads} thread${pr.unresolvedThreads === 1 ? '' : 's'}`
     return chipLink('chip-blocked', pr.url, 'Open conversation on GitHub', label)
   }
+  if (awaitsViewer(member, reviewing)) return chipLink('chip-yours', `${pr.url}/files`, 'Waiting on your approval', 'your review')
   if (pr.reviewDecision === 'CHANGES_REQUESTED') return '<span class="chip chip-changes">changes requested</span>'
   if (pr.reviewDecision !== 'APPROVED') return '<span class="chip chip-needs-review">needs review</span>'
   // Approved and green but still gated — required checks, CODEOWNERS, or a protection rule.
@@ -183,7 +184,12 @@ function stateChip(member: StackMember, stack: StackGroup): string {
   return '<span class="chip chip-ready">mergeable</span>'
 }
 
-export function renderStacks(container: HTMLElement, stacks: StackGroup[], theme: ThemeConfig): void {
+// Review-tab rungs that aren't context are exactly the ones you haven't approved.
+function awaitsViewer(member: StackMember, reviewing: boolean): boolean {
+  return reviewing && !member.context && member.pr.bucket === 'ready'
+}
+
+export function renderStacks(container: HTMLElement, stacks: StackGroup[], theme: ThemeConfig, reviewing = false): void {
   container.innerHTML = ''
 
   if (stacks.length === 0) {
@@ -198,7 +204,7 @@ export function renderStacks(container: HTMLElement, stacks: StackGroup[], theme
   }
 
   for (const stack of stacks) {
-    container.appendChild(buildStackCard(stack, theme))
+    container.appendChild(buildStackCard(stack, theme, reviewing))
   }
 }
 
@@ -224,7 +230,7 @@ function mergeBatchNote(stack: StackGroup): string {
   return `<span class="stack-batch" title="GitHub can merge these together — merge #${top} and every rung below it lands with it">${n} mergeable together</span>`
 }
 
-function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
+function buildStackCard(stack: StackGroup, theme: ThemeConfig, reviewing: boolean): HTMLElement {
   const card = document.createElement('div')
   card.className = 'stack-card'
 
@@ -237,8 +243,10 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     ? '<span class="stack-behind">conflicts</span>'
     : behind ? '<span class="stack-behind">needs restack</span>' : ''
 
+  const awaiting = stack.members.filter((m) => awaitsViewer(m, reviewing)).length
   const meta = [
     `${total} PRs`,
+    awaiting > 0 ? `<span class="stack-yours">${awaiting} awaiting you</span>` : '',
     stack.native ? '' : '<span class="stack-inferred" title="Inferred from branch bases — GitHub does not track this as a stack">inferred</span>',
     restackWarning,
     mergeBatchNote(stack),
@@ -278,6 +286,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     row.className = index === 0 ? 'stack-row stack-bottom' : 'stack-row'
     if (stack.mergeBatch.includes(pr.number)) row.classList.add('stack-mergeable')
     if (member.context) row.classList.add('stack-context')
+    if (awaitsViewer(member, reviewing)) row.classList.add('stack-yours-row')
     if (isCIInFlight(pr.ciState)) row.classList.add(isStalledBuild(pr) ? 'stalled' : 'building')
     row.innerHTML = [
       `<td class="stack-pos-cell"><span class="stack-pos"><span class="stack-rail">${railFor(index)}</span><span class="stack-num">${position}</span></span></td>`,
@@ -286,7 +295,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
       renderTypeTd(type, theme),
       `<td class="title-cell">${escapeHtml(rest)}</td>`,
       `<td class="ci-cell">${ciStatusHtml(pr)}</td>`,
-      `<td class="state-cell">${stateChip(member, stack)}</td>`,
+      `<td class="state-cell">${stateChip(member, stack, reviewing)}</td>`,
       `<td class="days-cell">${pr.daysOpen}</td>`,
     ].join('')
     tbody.appendChild(row)
