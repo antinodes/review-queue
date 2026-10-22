@@ -12,6 +12,8 @@ export interface StackMember {
   parentNumber: number | null
   /** 0 for the trunk-most rung. Siblings share a depth; children indent under their parent. */
   depth: number
+  /** Shown to complete the chain, not because it belongs to this tab's queue. */
+  context: boolean
 }
 
 export interface StackGroup {
@@ -22,7 +24,7 @@ export interface StackGroup {
   native: boolean
   /** Bottom-to-top, depth-first. Index 0 is closest to the trunk. */
   members: StackMember[]
-  /** Rungs that are still open but absent from what we render (not yours, already approved, …). */
+  /** Open rungs we hold no data for, so they can't render (a failed or skipped fetch). */
   hiddenCount: number
   /** Rungs GitHub would land in one "merge up to here", bottom-up. Inferred stacks merge one at a time, so at most the root. */
   mergeBatch: number[]
@@ -58,38 +60,37 @@ function baseKey(pr: ClassifiedPR): string {
 const MIN_STACK_SIZE = 2
 
 /**
- * `linkOnly` PRs join the graph but are never rendered. They exist because the review queue
- * filters PRs (already approved, CI red) before stacks are built, and dropping a middle rung
- * would otherwise split one chain into two sub-minimum fragments and scatter it back into
- * flat rows — the exact thing this section exists to prevent.
+ * Every open rung renders, but a stack only appears when at least one of `prs` is in it.
+ * `context` rungs (approved, drafts, other people's) complete the chain without earning it a slot.
  */
-export function buildStacks(prs: ClassifiedPR[], linkOnly: ClassifiedPR[] = []): StackGroup[] {
-  const visible = new Set(prs.map((p) => prKey(p.repo, p.number)))
-  const byRepo = new Map<string, ClassifiedPR[]>()
-  for (const pr of [...prs, ...linkOnly]) {
-    const list = byRepo.get(pr.repo) ?? []
-    list.push(pr)
-    byRepo.set(pr.repo, list)
+export function buildStacks(prs: ClassifiedPR[], context: ClassifiedPR[] = []): StackGroup[] {
+  const own = new Set(prs.map((p) => prKey(p.repo, p.number)))
+  const byRepo = new Map<string, Map<number, ClassifiedPR>>()
+  for (const pr of [...prs, ...context]) {
+    const repoPRs = byRepo.get(pr.repo) ?? new Map<number, ClassifiedPR>()
+    if (!repoPRs.has(pr.number)) repoPRs.set(pr.number, pr)
+    byRepo.set(pr.repo, repoPRs)
   }
 
   const groups: StackGroup[] = []
-  for (const [repo, repoPRs] of byRepo) {
+  for (const [repo, byNumber] of byRepo) {
+    const repoPRs = [...byNumber.values()]
     const native = repoPRs.filter((p) => p.stack)
     const rest = repoPRs.filter((p) => !p.stack)
-    groups.push(...buildNativeStacks(repo, native, visible), ...inferStacks(repo, rest, visible))
+    groups.push(...buildNativeStacks(repo, native, own), ...inferStacks(repo, rest, own))
   }
 
   groups.sort((a, b) => a.repo.localeCompare(b.repo) || a.label.localeCompare(b.label))
   return groups
 }
 
-function isVisible(pr: ClassifiedPR, visible: Set<string>): boolean {
-  return visible.has(prKey(pr.repo, pr.number))
+function isOwn(pr: ClassifiedPR, own: Set<string>): boolean {
+  return own.has(prKey(pr.repo, pr.number))
 }
 
 // ── Native stacks (GitHub tracks membership and order for us) ──
 
-function buildNativeStacks(repo: string, prs: ClassifiedPR[], visible: Set<string>): StackGroup[] {
+function buildNativeStacks(repo: string, prs: ClassifiedPR[], own: Set<string>): StackGroup[] {
   const byStack = new Map<number, ClassifiedPR[]>()
   for (const pr of prs) {
     const list = byStack.get(pr.stack!.number) ?? []
@@ -100,19 +101,19 @@ function buildNativeStacks(repo: string, prs: ClassifiedPR[], visible: Set<strin
   const groups: StackGroup[] = []
   for (const [number, all] of byStack) {
     all.sort((a, b) => a.stack!.position - b.stack!.position)
-    const shown = all.filter((p) => isVisible(p, visible))
-    if (shown.length < MIN_STACK_SIZE) continue
+    if (all.length < MIN_STACK_SIZE || !all.some((p) => isOwn(p, own))) continue
 
     // Entries are the whole truth about the stack, merged rungs included. Positions are never
     // reused, so a merged rung keeps its slot and only the unsettled ones still block anything.
     const entries = all[0].stack!.entries
-    const members = shown.map((pr, index) => ({
+    const members = all.map((pr, index) => ({
       pr,
       parentNumber: nearestBlockingRung(entries, pr.stack!.position),
       depth: index,
+      context: !isOwn(pr, own),
     }))
 
-    const rendered = new Set(shown.map((p) => p.number))
+    const rendered = new Set(all.map((p) => p.number))
     const hiddenCount = entries.filter((e) => !e.settled && !rendered.has(e.number)).length
 
     groups.push({
@@ -156,7 +157,7 @@ function mergeBatchFor(entries: StackEntry[], known: ClassifiedPR[]): number[] {
 
 // A PR is the child of whichever PR's head branch it targets. PRs targeting the trunk
 // (or a branch with no open PR) are roots; anything reachable from a root is one chain.
-function inferStacks(repo: string, prs: ClassifiedPR[], visible: Set<string>): StackGroup[] {
+function inferStacks(repo: string, prs: ClassifiedPR[], own: Set<string>): StackGroup[] {
   const byHead = new Map<string, ClassifiedPR>()
   for (const pr of prs) {
     if (pr.headRefName) byHead.set(headKey(pr), pr)
@@ -181,18 +182,17 @@ function inferStacks(repo: string, prs: ClassifiedPR[], visible: Set<string>): S
 
   const groups: StackGroup[] = []
   for (const root of roots) {
-    const chain = walkChain(root, childrenOf, claimed)
-    const members = chain.filter((m) => isVisible(m.pr, visible))
-    if (members.length < MIN_STACK_SIZE) continue
+    const members = walkChain(root, childrenOf, claimed, own)
+    if (members.length < MIN_STACK_SIZE || members.every((m) => m.context)) continue
     groups.push({
       key: `${repo}#branch:${root.headRefName}`,
       repo,
       label: root.headRefName,
       native: false,
       members,
-      hiddenCount: chain.length - members.length,
+      hiddenCount: 0,
       mergeBatch: isRungMergeable(root) ? [root.number] : [],
-      rebaseCommand: `gh stack init ${chain.map((m) => m.pr.headRefName).join(' ')}`,
+      rebaseCommand: `gh stack init ${members.map((m) => m.pr.headRefName).join(' ')}`,
     })
   }
   return groups
@@ -206,6 +206,7 @@ function walkChain(
   root: ClassifiedPR,
   childrenOf: Map<string, ClassifiedPR[]>,
   claimed: Set<string>,
+  own: Set<string>,
 ): StackMember[] {
   const out: StackMember[] = []
 
@@ -213,7 +214,7 @@ function walkChain(
     const key = headKey(pr)
     if (claimed.has(key)) return
     claimed.add(key)
-    out.push({ pr, parentNumber: parent?.number ?? null, depth })
+    out.push({ pr, parentNumber: parent?.number ?? null, depth, context: !isOwn(pr, own) })
     for (const child of childrenOf.get(key) ?? []) visit(child, pr, depth + 1)
   }
 

@@ -1,4 +1,4 @@
-import { searchReviewRequested, searchAuthored, searchMergedAuthored, fetchPRDetails, fetchRepoDeployments, fetchViewerLogin, isAncestor, isReleaseDeploy, releaseVersion, RateLimitError, rateLimitedUntil, clearRateLimit } from './github.ts'
+import { searchReviewing, searchAuthored, searchMergedAuthored, fetchPRDetails, fetchRepoDeployments, fetchViewerLogin, isAncestor, isReleaseDeploy, releaseVersion, RateLimitError, rateLimitedUntil, clearRateLimit } from './github.ts'
 import type { SearchPR, RepoDeployment, PRDetail } from './github.ts'
 import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, classifyMergedPRs, isDependabot, lastBusinessDayCutoff } from './classify.ts'
 import type { ReviewResult, MyPRsResult, DependabotResult, PRMergedMetadata } from './classify.ts'
@@ -80,7 +80,7 @@ function renderActiveTab(): void {
     setText('reviews-ready-h', t.sections.ready)
     setText('reviews-blocked-h', t.sections.blocked)
     toggleSection('reviews-stacks', r.stacks.length > 0)
-    renderStacks($('reviews-stacks'), r.stacks, t)
+    renderStacks($('reviews-stacks'), r.stacks, t, true)
     renderSection($('reviews-ready'), r.ready, t)
     renderSection($('reviews-blocked'), r.blocked, t, { showBlockReasons: true })
     const stackedReviews = countStacked(r.stacks)
@@ -137,14 +137,14 @@ function setText(id: string, text: string): void {
 }
 
 function countStacked(stacks: StackGroup[]): number {
-  return stacks.reduce((sum, s) => sum + s.members.length, 0)
+  return stacks.reduce((sum, s) => sum + s.members.filter((m) => !m.context).length, 0)
 }
 
-// Stacked PRs are lifted out of `ready` but are still waiting on you, so the badge counts them
-// too. Only unresolved threads make a review PR someone else's turn.
+// Stacked PRs are lifted out of `ready` but may still be waiting on you, so the badge counts
+// the stacked rungs that would otherwise have landed there.
 function reviewableCount(r: ReviewResult): number {
   const stacked = r.stacks.reduce(
-    (sum, s) => sum + s.members.filter((m) => m.pr.unresolvedThreads === 0).length, 0)
+    (sum, s) => sum + s.members.filter((m) => m.pr.bucket === 'ready').length, 0)
   return r.ready.length + stacked
 }
 
@@ -170,6 +170,23 @@ async function fetchDetails(token: string, prs: SearchPR[], viewerLogin: string,
     }),
   )
   return new Map(entries)
+}
+
+// Native stack entries name every rung, but only the ones a search returned have details yet.
+async function fetchMissingRungs(token: string, known: Map<string, PRDetail[]>, viewerLogin: string): Promise<Map<string, PRDetail[]>> {
+  const entries = await Promise.all([...known].map(async ([repo, details]) => {
+    const have = new Set(details.map((d) => d.number))
+    const missing = new Set(details.flatMap((d) =>
+      d.stack?.entries.filter((e) => !e.settled && !have.has(e.number)).map((e) => e.number) ?? []))
+    if (missing.size === 0) return [repo, []] as const
+    try { return [repo, await fetchPRDetails(token, repo, [...missing], viewerLogin, true)] as const }
+    catch (err) {
+      if (err instanceof RateLimitError) throw err
+      console.warn(`Failed to fetch stack rungs for ${repo}:`, err)
+      return [repo, []] as const
+    }
+  }))
+  return new Map(entries.filter(([, details]) => details.length > 0).map(([repo, details]) => [repo, [...details]]))
 }
 
 function mergeDetailMaps(a: Map<string, PRDetail[]>, b: Map<string, PRDetail[]>): Map<string, PRDetail[]> {
@@ -310,7 +327,7 @@ async function loadQueue(token: string): Promise<void> {
   try {
     const cutoff = lastBusinessDayCutoff()
     const [reviewPRs, authoredPRs, mergedPRs, viewerLogin] = await Promise.all([
-      searchReviewRequested(token),
+      searchReviewing(token),
       searchAuthored(token),
       searchMergedAuthored(token, cutoff),
       fetchViewerLogin(token),
@@ -320,10 +337,12 @@ async function loadQueue(token: string): Promise<void> {
     const humanReviewPRs = reviewPRs.filter((pr) => !isDependabot(pr))
     const dependabotPRs = reviewPRs.filter(isDependabot)
 
-    const [openDetails, mergedDetails] = await Promise.all([
+    const [searchedDetails, mergedDetails] = await Promise.all([
       fetchDetails(token, [...reviewPRs, ...authoredPRs], viewerLogin, true),
       fetchDetails(token, mergedPRs, viewerLogin, false),
     ])
+    const openDetails = mergeDetailMaps(searchedDetails, await fetchMissingRungs(token, searchedDetails, viewerLogin))
+    const stackRungs = [...openDetails.values()].flat().filter((d) => d.stack).map((d) => d.summary)
     const detailsByRepo = mergeDetailMaps(openDetails, mergedDetails)
 
     const mergedRepos = [...new Set(mergedPRs.map((p) => p.repo))]
@@ -345,8 +364,8 @@ async function loadQueue(token: string): Promise<void> {
     $('progress-bar').classList.remove('active')
     if (epoch !== sessionEpoch) return // signed out mid-fetch — discard
 
-    cachedReviews = classifyReviewPRs(humanReviewPRs, detailsByRepo)
-    cachedMyPRs = classifyMyPRs(authoredPRs, detailsByRepo)
+    cachedReviews = classifyReviewPRs(humanReviewPRs, detailsByRepo, stackRungs)
+    cachedMyPRs = classifyMyPRs(authoredPRs, detailsByRepo, stackRungs)
     cachedMyPRs.recentlyMerged = classifyMergedPRs(mergedPRs, detailsByRepo, cutoff.getTime(), metadataByPR)
     cachedDependabot = classifyDependabotPRs(dependabotPRs, detailsByRepo)
 
