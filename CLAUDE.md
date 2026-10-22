@@ -24,11 +24,13 @@ github.ts         → classify.ts            → stacks.ts        → render.ts
 
 **`main.ts`** owns lifecycle: token prompt → fetch → classify → render → 3-minute auto-refresh. Caches `cachedReviews`/`cachedMyPRs`/`cachedDependabot` so theme and tab switches re-render from memory without refetching.
 
-**`github.ts`** opens each refresh cycle with four parallel fetches: `searchReviewRequested`, `searchAuthored`, `searchMergedAuthored`, `fetchViewerLogin`. Then one batched GraphQL query **per repo** that packs all PR numbers into aliased fragments (`pr123: pullRequest(number: 123) {...}`). Adding a new GraphQL field? Add it to `buildPRFragment` and the `RawPRDetail`/`PRDetail` types — the mapping in `fetchPRDetails` is hand-written, not generated. All GraphQL goes through the shared `graphql<T>()` helper, which owns the POST, the HTTP check, and the `errors[]` check. The fragment is a GraphQL document, so comments in it use `#`, not `//`.
+**`github.ts`** opens each refresh cycle with four parallel fetches: `searchReviewRequested`, `searchAuthored`, `searchMergedAuthored`, `fetchViewerLogin`. Then batched GraphQL queries per repo, `PRS_PER_QUERY` PRs each, packed into aliased fragments (`pr123: pullRequest(number: 123) {...}`). GitHub enforces a per-query resource limit ("Resource limits for this query exceeded"), so `fetchPRChunk` halves any batch that trips it and keeps the partial data that did come back. Merged PRs use the same fragment with `$full: false`, which `@include`-skips CI, reviews, threads, stacks, and mergeability. Adding a new GraphQL field? Add it to `buildPRFragment` and the `RawPRDetail`/`PRDetail` types — the mapping in `toPRDetail` is hand-written, not generated; fields inside the `$full` block are optional on `RawPRDetail`. All GraphQL goes through `graphqlPartial()` (or `graphql<T>()`, which also throws on any `errors[]`). The fragment is a GraphQL document, so comments in it use `#`, not `//`.
 
 `fetchPRDetails` re-queries once for any PR whose `mergeable` came back `UNKNOWN`. GitHub computes mergeability lazily and answers `UNKNOWN` while it works, so a cold PR's conflicts are invisible on first load without this (measured: 8 of 40 cold PRs, two of them genuinely conflicting). The retry is best-effort and never fails the refresh.
 
-The merged section costs more on top of that: `fetchRepoDeployments` (paginated, capped at 10 pages) per repo with merged PRs, plus one `isAncestor` compare call per PR-per-environment and per candidate release until a version matches. `computePRMetadata` memoizes those compares **within** a cycle but not across cycles, and `loadQueue` awaits it before first paint. Both are worth revisiting if the request volume becomes a problem.
+The merged section costs more on top of that: `fetchRepoDeployments` (paginated, capped at 10 pages) per repo with merged PRs, plus one `isAncestor` compare call per PR-per-environment and per candidate release until a version matches. Compare results are cached across cycles (`settledAncestry`), since ancestry between two fixed SHAs never changes; `loadQueue` still awaits `computePRMetadata` before first paint.
+
+**Rate limits.** Every request goes through `apiFetch`, which caps concurrency at `MAX_CONCURRENT_REQUESTS` and turns 403/429 rate-limit responses into a `RateLimitError` carrying `retryAt`. A fetch `TypeError` is treated the same way: secondary-limit responses omit CORS headers, so the browser reports them as network failures. `loadQueue` skips every refresh until `retryAt` passes. Only a 401 signs the user out. Refreshes are skipped while the tab is hidden.
 
 **`classify.ts`** has three independent classifiers. They share `buildClassified` and differ only in bucket rules:
 - `classifyReviewPRs` — drops PRs the viewer has already APPROVED and PRs whose CI is failing or in flight, splits the rest into `ready` vs `blocked` (unresolved threads). Merge conflicts deliberately do **not** block here: they stop a merge, not a review.
@@ -56,7 +58,7 @@ Dependabot PRs are stripped from the review tab before classification in `main.t
 
 ## Conventions worth knowing
 
-- Token sent only to `api.github.com`. On 401 the app clears the token from localStorage and re-prompts.
+- Token sent only to `api.github.com`. On 401 (and only 401) the app clears the token from localStorage and re-prompts.
 - Service worker (`public/sw.js`) never caches `api.github.com` — PR data is always fresh.
 - App badge (`navigator.setAppBadge`) reflects the count of ready review PRs only.
 - `variations/` holds standalone HTML prototypes for theme ideas (bloomberg, brutalist, dataviz, dense, newspaper, rpg). They are not wired into the app — treat as design references.
