@@ -3,6 +3,7 @@ const GRAPHQL_API = 'https://api.github.com/graphql'
 const MAX_CONCURRENT_REQUESTS = 4
 const PRS_PER_QUERY = 5
 const DEFAULT_BACKOFF_MS = 5 * 60 * 1000
+const GATEWAY_TIMEOUT_RE = /request failed: 50[24]\b/
 
 export class RateLimitError extends Error {
   readonly retryAt: number
@@ -132,7 +133,6 @@ interface GraphQLResult<D> {
   errors?: GraphQLError[]
 }
 
-// Fields marked optional are skipped by the slim fragment used for merged PRs.
 interface RawPRDetail {
   number: number
   headRefName: string
@@ -172,6 +172,20 @@ interface RawPRDetail {
 
 let inFlight = 0
 const waiting: Array<() => void> = []
+let pausedUntil = 0
+
+export function rateLimitedUntil(): number {
+  return pausedUntil
+}
+
+export function clearRateLimit(): void {
+  pausedUntil = 0
+}
+
+function rateLimited(retryAt: number): RateLimitError {
+  pausedUntil = Math.max(pausedUntil, retryAt)
+  return new RateLimitError(pausedUntil)
+}
 
 async function acquireSlot(): Promise<void> {
   if (inFlight < MAX_CONCURRENT_REQUESTS) {
@@ -205,12 +219,13 @@ async function isRateLimited(response: Response): Promise<boolean> {
 async function apiFetch(token: string, url: string, init: RequestInit = {}): Promise<Response> {
   await acquireSlot()
   try {
+    if (Date.now() < pausedUntil) throw new RateLimitError(pausedUntil)
     const response = await fetch(url, { ...init, headers: headers(token) })
-    if (!response.ok && await isRateLimited(response)) throw new RateLimitError(retryAtFrom(response))
+    if (!response.ok && await isRateLimited(response)) throw rateLimited(retryAtFrom(response))
     return response
   } catch (err) {
     // Secondary-limit responses carry no CORS headers, so the browser reports them as a network failure.
-    if (err instanceof TypeError) throw new RateLimitError(Date.now() + DEFAULT_BACKOFF_MS)
+    if (err instanceof TypeError && navigator.onLine) throw rateLimited(Date.now() + DEFAULT_BACKOFF_MS)
     throw err
   } finally {
     releaseSlot()
@@ -226,7 +241,7 @@ async function graphqlPartial<D>(token: string, query: string, variables?: Recor
     throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`)
   }
   const json: GraphQLResult<D> = await response.json()
-  if (json.errors?.some((e) => e.type === 'RATE_LIMITED')) throw new RateLimitError(Date.now() + DEFAULT_BACKOFF_MS)
+  if (json.errors?.some((e) => e.type === 'RATE_LIMITED')) throw rateLimited(retryAtFrom(response))
   return json
 }
 
@@ -352,6 +367,7 @@ export async function isAncestor(token: string, repo: string, base: string, head
   if (base === head) return true
   const [owner, name] = repo.split('/')
   const response = await apiFetch(token, `https://api.github.com/repos/${owner}/${name}/compare/${base}...${head}`)
+  if (response.status === 404) return false
   if (!response.ok) throw new Error(`Compare failed: ${response.status} ${response.statusText}`)
   const data = await response.json()
   return data.status === 'ahead' || data.status === 'identical'
@@ -423,26 +439,40 @@ async function fetchPRChunk(token: string, repo: string, prNumbers: number[], fu
       ${prNumbers.map(buildPRFragment).join('\n')}
     }
   }`
-  const json = await graphqlPartial<{ repository: RepoPRData | null }>(token, query, { full })
+  let json: GraphQLResult<{ repository: RepoPRData | null }>
+  try {
+    json = await graphqlPartial(token, query, { full })
+  } catch (err) {
+    const timedOut = err instanceof Error && GATEWAY_TIMEOUT_RE.test(err.message)
+    if (!timedOut || prNumbers.length === 1) throw err
+    return bisect(token, repo, prNumbers, full)
+  }
+
   const data = json.data?.repository ?? {}
   const missing = prNumbers.filter((n) => !data[`pr${n}`])
   if (missing.length === 0) return data
 
   const resourceLimited = json.errors?.some((e) => /resource limits/i.test(e.message)) ?? false
-  if (!resourceLimited || prNumbers.length === 1) {
-    console.warn(`Skipping ${repo} PRs ${missing.join(', ')}:`, json.errors)
+  if (!resourceLimited) {
+    throw new Error(`GraphQL errors: ${json.errors?.map((e) => e.message).join(', ') ?? `no data for ${repo}`}`)
+  }
+  if (prNumbers.length === 1) {
+    console.warn(`Skipping ${repo}#${prNumbers[0]}: too expensive to query on its own`)
     return data
   }
-  const half = Math.ceil(missing.length / 2)
-  const retried = await Promise.all(
-    [missing.slice(0, half), missing.slice(half)]
+  return { ...data, ...await bisect(token, repo, missing, full) }
+}
+
+async function bisect(token: string, repo: string, prNumbers: number[], full: boolean): Promise<RepoPRData> {
+  const half = Math.ceil(prNumbers.length / 2)
+  const parts = await Promise.all(
+    [prNumbers.slice(0, half), prNumbers.slice(half)]
       .filter((c) => c.length > 0)
       .map((c) => fetchPRChunk(token, repo, c, full)),
   )
-  return Object.assign(data, ...retried)
+  return Object.assign({}, ...parts)
 }
 
-// `full: false` is for merged PRs, which only need merge facts, not CI, reviews, or stacks.
 export async function fetchPRDetails(
   token: string,
   repo: string,

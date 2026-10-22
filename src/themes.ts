@@ -25,9 +25,16 @@ export interface SectionLabels {
   depFailing: string
 }
 
+export interface MessageLabels {
+  rateLimited: (resumeAt: string) => string
+  retry: string
+  signOut: string
+}
+
 export interface ThemeConfig {
   id: string
   label: string
+  messages: MessageLabels
   tabs: TabLabels
   sections: SectionLabels
   colPR: string
@@ -44,6 +51,12 @@ export interface ThemeConfig {
   typeLabels: Record<string, string>
   typeIconMode: 'badge' | 'rpg-awesome'
   threadBadgeFn?: (count: number) => string
+}
+
+const defaultMessages: MessageLabels = {
+  rateLimited: (resumeAt) => `GitHub rate limit hit — pausing refresh until ${resumeAt}.`,
+  retry: 'Retry',
+  signOut: 'Sign out',
 }
 
 const defaultTabs: TabLabels = { reviews: 'Reviews', myPRs: 'My PRs', dependabot: 'Dependabot' }
@@ -83,6 +96,11 @@ export const themes: Record<string, ThemeConfig> = {
   brutalist: {
     id: 'brutalist',
     label: 'Brutalist',
+    messages: {
+      rateLimited: (resumeAt) => `RATE LIMITED — PAUSED UNTIL ${resumeAt}`,
+      retry: 'RETRY',
+      signOut: 'SIGN OUT',
+    },
     tabs: { reviews: 'REVIEWS', myPRs: 'MY PRS', dependabot: 'DEPENDABOT' },
     sections: {
       ...defaultSections,
@@ -109,6 +127,7 @@ export const themes: Record<string, ThemeConfig> = {
   dense: {
     id: 'dense',
     label: 'Dense',
+    messages: defaultMessages,
     tabs: defaultTabs,
     sections: defaultSections,
     ...defaultCols,
@@ -118,6 +137,7 @@ export const themes: Record<string, ThemeConfig> = {
   newspaper: {
     id: 'newspaper',
     label: 'Newspaper',
+    messages: defaultMessages,
     tabs: defaultTabs,
     sections: defaultSections,
     ...defaultCols,
@@ -127,6 +147,11 @@ export const themes: Record<string, ThemeConfig> = {
   rpg: {
     id: 'rpg',
     label: 'RPG',
+    messages: {
+      rateLimited: (resumeAt) => `The guild's scouts are exhausted — they ride again at ${resumeAt}.`,
+      retry: 'Try Again',
+      signOut: 'Leave the Guild',
+    },
     tabs: { reviews: 'Quest Board', myPRs: 'My Campaigns', dependabot: 'Golem Work' },
     sections: {
       ready: 'Quests Awaiting Champions',

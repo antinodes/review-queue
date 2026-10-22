@@ -1,4 +1,4 @@
-import { searchReviewRequested, searchAuthored, searchMergedAuthored, fetchPRDetails, fetchRepoDeployments, fetchViewerLogin, isAncestor, isReleaseDeploy, releaseVersion, RateLimitError } from './github.ts'
+import { searchReviewRequested, searchAuthored, searchMergedAuthored, fetchPRDetails, fetchRepoDeployments, fetchViewerLogin, isAncestor, isReleaseDeploy, releaseVersion, RateLimitError, rateLimitedUntil, clearRateLimit } from './github.ts'
 import type { SearchPR, RepoDeployment, PRDetail } from './github.ts'
 import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, classifyMergedPRs, isDependabot, lastBusinessDayCutoff } from './classify.ts'
 import type { ReviewResult, MyPRsResult, DependabotResult, PRMergedMetadata } from './classify.ts'
@@ -15,7 +15,7 @@ const $ = (id: string) => document.getElementById(id)!
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let lastAttemptAt = 0
-let throttledUntil = 0
+let loadingEpoch: number | null = null
 let hasLoadedOnce = false
 // Bumped on sign-out so in-flight loadQueue calls discard their results.
 let sessionEpoch = 0
@@ -46,6 +46,7 @@ function hideAuthPrompt(): void {
 function signOut(): void {
   sessionEpoch++
   clearToken()
+  clearRateLimit()
   if (refreshTimer) clearInterval(refreshTimer)
   updateBadge(0)
   hasLoadedOnce = false
@@ -284,10 +285,19 @@ async function computePRMetadata(
   return result
 }
 
+function showRateLimited(retryAt: number): void {
+  renderError($('error'), activeTheme.messages.rateLimited(formatClock(new Date(retryAt))))
+}
+
 async function loadQueue(token: string): Promise<void> {
-  if (Date.now() < throttledUntil) return
-  lastAttemptAt = Date.now()
+  if (loadingEpoch === sessionEpoch) return
+  if (Date.now() < rateLimitedUntil()) {
+    showRateLimited(rateLimitedUntil())
+    return
+  }
   const epoch = sessionEpoch
+  loadingEpoch = epoch
+  lastAttemptAt = Date.now()
   $('error').classList.add('hidden')
 
   if (hasLoadedOnce) {
@@ -352,8 +362,7 @@ async function loadQueue(token: string): Promise<void> {
     if (epoch !== sessionEpoch) return // signed out mid-fetch — discard
 
     if (err instanceof RateLimitError) {
-      throttledUntil = err.retryAt
-      renderError($('error'), `GitHub rate limit hit — pausing refresh until ${formatClock(new Date(err.retryAt))}.`)
+      showRateLimited(err.retryAt)
       return
     }
 
@@ -365,11 +374,12 @@ async function loadQueue(token: string): Promise<void> {
       return
     }
 
-    // The toolbar is hidden until the first load succeeds, so the banner carries its own actions.
     renderError($('error'), `Failed to load PRs: ${message}`, [
-      { label: 'Retry', onClick: () => loadQueue(token) },
-      { label: 'Sign out', onClick: signOut },
+      { label: activeTheme.messages.retry, onClick: () => loadQueue(token) },
+      { label: activeTheme.messages.signOut, onClick: signOut },
     ])
+  } finally {
+    if (loadingEpoch === epoch) loadingEpoch = null
   }
 }
 
