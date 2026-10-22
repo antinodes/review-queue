@@ -1,4 +1,4 @@
-import { searchReviewRequested, searchAuthored, searchMergedAuthored, fetchPRDetails, fetchRepoDeployments, fetchViewerLogin, isAncestor, isReleaseDeploy, releaseVersion } from './github.ts'
+import { searchReviewRequested, searchAuthored, searchMergedAuthored, fetchPRDetails, fetchRepoDeployments, fetchViewerLogin, isAncestor, isReleaseDeploy, releaseVersion, RateLimitError, rateLimitedUntil, clearRateLimit } from './github.ts'
 import type { SearchPR, RepoDeployment, PRDetail } from './github.ts'
 import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, classifyMergedPRs, isDependabot, lastBusinessDayCutoff } from './classify.ts'
 import type { ReviewResult, MyPRsResult, DependabotResult, PRMergedMetadata } from './classify.ts'
@@ -14,6 +14,8 @@ const REFRESH_INTERVAL_MS = 3 * 60 * 1000
 const $ = (id: string) => document.getElementById(id)!
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+let lastAttemptAt = 0
+let loadingEpoch: number | null = null
 let hasLoadedOnce = false
 // Bumped on sign-out so in-flight loadQueue calls discard their results.
 let sessionEpoch = 0
@@ -44,6 +46,7 @@ function hideAuthPrompt(): void {
 function signOut(): void {
   sessionEpoch++
   clearToken()
+  clearRateLimit()
   if (refreshTimer) clearInterval(refreshTimer)
   updateBadge(0)
   hasLoadedOnce = false
@@ -152,21 +155,27 @@ function toggleSection(containerId: string, visible: boolean): void {
 
 // ── Data fetching ──
 
-async function fetchDetails(token: string, prs: SearchPR[], viewerLogin: string): Promise<Map<string, import('./github.ts').PRDetail[]>> {
-  const byRepo = new Map<string, number[]>()
+async function fetchDetails(token: string, prs: SearchPR[], viewerLogin: string, full: boolean): Promise<Map<string, PRDetail[]>> {
+  const byRepo = new Map<string, Set<number>>()
   for (const pr of prs) {
-    const list = byRepo.get(pr.repo) ?? []
-    list.push(pr.number)
-    byRepo.set(pr.repo, list)
+    const set = byRepo.get(pr.repo) ?? new Set()
+    set.add(pr.number)
+    byRepo.set(pr.repo, set)
   }
 
   const entries = await Promise.all(
     [...byRepo.entries()].map(async ([repo, numbers]) => {
-      const details = await fetchPRDetails(token, repo, numbers, viewerLogin)
+      const details = await fetchPRDetails(token, repo, [...numbers], viewerLogin, full)
       return [repo, details] as const
     }),
   )
   return new Map(entries)
+}
+
+function mergeDetailMaps(a: Map<string, PRDetail[]>, b: Map<string, PRDetail[]>): Map<string, PRDetail[]> {
+  const out = new Map(a)
+  for (const [repo, details] of b) out.set(repo, [...(out.get(repo) ?? []), ...details])
+  return out
 }
 
 interface EnvTip { env: string; sha: string; createdAt: string }
@@ -229,14 +238,21 @@ async function firstShippedVersion(
   return null
 }
 
+// Ancestry between two fixed SHAs never changes, so settled answers outlive the refresh cycle.
+const settledAncestry = new Map<string, boolean>()
+
 function memoizedAncestryCheck(token: string): AncestryCheck {
-  const cache = new Map<string, Promise<boolean>>()
+  const inCycle = new Map<string, Promise<boolean>>()
   return (repo, base, head) => {
     const key = `${repo}|${base}|${head}`
-    let p = cache.get(key)
+    const settled = settledAncestry.get(key)
+    if (settled !== undefined) return Promise.resolve(settled)
+    let p = inCycle.get(key)
     if (!p) {
-      p = isAncestor(token, repo, base, head).catch(() => false)
-      cache.set(key, p)
+      p = isAncestor(token, repo, base, head)
+        .then((result) => { settledAncestry.set(key, result); return result })
+        .catch((err) => { if (err instanceof RateLimitError) throw err; return false })
+      inCycle.set(key, p)
     }
     return p
   }
@@ -269,8 +285,19 @@ async function computePRMetadata(
   return result
 }
 
+function showRateLimited(retryAt: number): void {
+  renderError($('error'), activeTheme.messages.rateLimited(formatClock(new Date(retryAt))))
+}
+
 async function loadQueue(token: string): Promise<void> {
+  if (loadingEpoch === sessionEpoch) return
+  if (Date.now() < rateLimitedUntil()) {
+    showRateLimited(rateLimitedUntil())
+    return
+  }
   const epoch = sessionEpoch
+  loadingEpoch = epoch
+  lastAttemptAt = Date.now()
   $('error').classList.add('hidden')
 
   if (hasLoadedOnce) {
@@ -293,9 +320,11 @@ async function loadQueue(token: string): Promise<void> {
     const humanReviewPRs = reviewPRs.filter((pr) => !isDependabot(pr))
     const dependabotPRs = reviewPRs.filter(isDependabot)
 
-    // Collect all unique PRs for GraphQL batching
-    const allPRs = [...reviewPRs, ...authoredPRs, ...mergedPRs]
-    const detailsByRepo = await fetchDetails(token, allPRs, viewerLogin)
+    const [openDetails, mergedDetails] = await Promise.all([
+      fetchDetails(token, [...reviewPRs, ...authoredPRs], viewerLogin, true),
+      fetchDetails(token, mergedPRs, viewerLogin, false),
+    ])
+    const detailsByRepo = mergeDetailMaps(openDetails, mergedDetails)
 
     const mergedRepos = [...new Set(mergedPRs.map((p) => p.repo))]
     const deploymentsByRepo = new Map<string, RepoDeployment[]>(
@@ -303,6 +332,7 @@ async function loadQueue(token: string): Promise<void> {
         mergedRepos.map(async (repo) => {
           try { return [repo, await fetchRepoDeployments(token, repo, cutoff.getTime())] as const }
           catch (err) {
+            if (err instanceof RateLimitError) throw err
             console.warn(`Failed to fetch deployments for ${repo}:`, err)
             return [repo, [] as RepoDeployment[]] as const
           }
@@ -330,6 +360,12 @@ async function loadQueue(token: string): Promise<void> {
     $('loading').classList.add('hidden')
     $('progress-bar').classList.remove('active')
     if (epoch !== sessionEpoch) return // signed out mid-fetch — discard
+
+    if (err instanceof RateLimitError) {
+      showRateLimited(err.retryAt)
+      return
+    }
+
     const message = err instanceof Error ? err.message : 'Unknown error'
 
     if (message.includes('401')) {
@@ -339,18 +375,20 @@ async function loadQueue(token: string): Promise<void> {
     }
 
     renderError($('error'), `Failed to load PRs: ${message}`, [
-      { label: oauthEnabled ? 'Sign in again' : 'Re-enter token', onClick: signOut },
+      { label: activeTheme.messages.retry, onClick: () => loadQueue(token) },
+      { label: activeTheme.messages.signOut, onClick: signOut },
     ])
-    // With no content on screen the toolbar (refresh/sign-out) is hidden too;
-    // re-show the prompt so the user has a way to retry.
-    if (!hasLoadedOnce) showAuthPrompt()
+  } finally {
+    if (loadingEpoch === epoch) loadingEpoch = null
   }
 }
 
+function formatClock(d: Date): string {
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
 function updateTimestamp(): void {
-  const now = new Date()
-  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  $('last-updated').textContent = `Updated ${time}`
+  $('last-updated').textContent = `Updated ${formatClock(new Date())}`
 }
 
 function updateBadge(count: number): void {
@@ -362,7 +400,14 @@ function updateBadge(count: number): void {
 
 function startAutoRefresh(token: string): void {
   if (refreshTimer) clearInterval(refreshTimer)
-  refreshTimer = setInterval(() => loadQueue(token), REFRESH_INTERVAL_MS)
+  refreshTimer = setInterval(() => {
+    if (!document.hidden) loadQueue(token)
+  }, REFRESH_INTERVAL_MS)
+}
+
+function refreshIfStale(): void {
+  const token = getToken()
+  if (token && !document.hidden && Date.now() - lastAttemptAt >= REFRESH_INTERVAL_MS) loadQueue(token)
 }
 
 // ── UI init ──
@@ -470,6 +515,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const token = getToken()
     if (token) loadQueue(token)
   })
+
+  document.addEventListener('visibilitychange', refreshIfStale)
 
   startup()
 })
