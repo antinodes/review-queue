@@ -25,6 +25,8 @@ export interface SearchPR {
 
 export interface PRDetail {
   number: number
+  /** Search-level fields, so a stack rung that never came back from a search can still render. */
+  summary: SearchPR
   headRefName: string
   baseRefName: string
   mergedAt: string | null
@@ -135,6 +137,11 @@ interface GraphQLResult<D> {
 
 interface RawPRDetail {
   number: number
+  title: string
+  url: string
+  createdAt: string
+  isDraft: boolean
+  author: { login: string } | null
   headRefName: string
   baseRefName: string
   mergedAt: string | null
@@ -284,8 +291,14 @@ async function searchPRs(token: string, query: string): Promise<SearchPR[]> {
   })
 }
 
-export function searchReviewRequested(token: string): Promise<SearchPR[]> {
-  return searchPRs(token, 'is:pr is:open review-requested:@me')
+// Submitting any review clears the request, so a COMMENTED review would otherwise drop the PR.
+export async function searchReviewing(token: string): Promise<SearchPR[]> {
+  const [requested, reviewed] = await Promise.all([
+    searchPRs(token, 'is:pr is:open review-requested:@me'),
+    searchPRs(token, 'is:pr is:open reviewed-by:@me -author:@me'),
+  ])
+  const seen = new Set(requested.map((pr) => `${pr.repo}#${pr.number}`))
+  return [...requested, ...reviewed.filter((pr) => !seen.has(`${pr.repo}#${pr.number}`))]
 }
 
 export function searchAuthored(token: string): Promise<SearchPR[]> {
@@ -309,6 +322,11 @@ function buildPRFragment(number: number): string {
   return `
     pr${number}: pullRequest(number: ${number}) {
       number
+      title
+      url
+      createdAt
+      isDraft
+      author { login }
       headRefName
       baseRefName
       mergedAt
@@ -498,11 +516,12 @@ export async function fetchPRDetails(
 
   return prNumbers.flatMap((num) => {
     const pr = repoData[`pr${num}`]
-    return pr ? [toPRDetail(num, pr, viewerLogin)] : []
+    return pr ? [toPRDetail(repo, num, pr, viewerLogin)] : []
   })
 }
 
-function toPRDetail(num: number, pr: RawPRDetail, viewerLogin: string | undefined): PRDetail {
+function toPRDetail(repo: string, num: number, pr: RawPRDetail, viewerLogin: string | undefined): PRDetail {
+  const summary: SearchPR = { number: num, title: pr.title, url: pr.url, createdAt: pr.createdAt, isDraft: pr.isDraft, author: pr.author?.login ?? 'ghost', repo }
   const commitNode = pr.ciStatus?.nodes[0]
   const ciState = commitNode?.commit?.statusCheckRollup?.state ?? null
   const buildStartedAt = earliestRunningSuite(commitNode?.commit?.checkSuites?.nodes ?? [])
@@ -534,5 +553,5 @@ function toPRDetail(num: number, pr: RawPRDetail, viewerLogin: string | undefine
       }
     : null
 
-  return { number: num, headRefName: pr.headRefName, baseRefName: pr.baseRefName, mergedAt: pr.mergedAt, mergeCommitOid: pr.mergeCommit?.oid ?? null, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision ?? null, viewerReviewState, timelineEvents, stack, buildStartedAt, mergeStateStatus: pr.mergeStateStatus ?? null, mergeable: pr.mergeable ?? null, headRepo: pr.headRepository?.nameWithOwner ?? '' }
+  return { number: num, summary, headRefName: pr.headRefName, baseRefName: pr.baseRefName, mergedAt: pr.mergedAt, mergeCommitOid: pr.mergeCommit?.oid ?? null, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision ?? null, viewerReviewState, timelineEvents, stack, buildStartedAt, mergeStateStatus: pr.mergeStateStatus ?? null, mergeable: pr.mergeable ?? null, headRepo: pr.headRepository?.nameWithOwner ?? '' }
 }

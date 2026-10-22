@@ -69,10 +69,10 @@ export interface ReviewResult {
 function partitionStacks<T extends Record<string, ClassifiedPR[]>>(
   buckets: T,
   bucketNames: Array<keyof T>,
-  linkOnly: ClassifiedPR[] = [],
+  context: ClassifiedPR[] = [],
 ): { stacks: StackGroup[]; buckets: T } {
   const all = bucketNames.flatMap((name) => buckets[name])
-  const stacks = buildStacks(all, linkOnly)
+  const stacks = buildStacks(all, context)
 
   const claimed = stackMemberKeys(stacks)
   for (const name of bucketNames) {
@@ -84,17 +84,16 @@ function partitionStacks<T extends Record<string, ClassifiedPR[]>>(
 export function classifyReviewPRs(
   searchResults: SearchPR[],
   detailsByRepo: Map<string, PRDetail[]>,
+  stackRungs: SearchPR[] = [],
 ): ReviewResult {
   const ready: ClassifiedPR[] = []
   const blocked: ClassifiedPR[] = []
-  // Skipped-but-open PRs still hold their chains together, so they join the stack graph without
-  // ever being rendered. Approving the middle of a stack is the common case.
-  const linkOnly: ClassifiedPR[] = []
+  const context = classifyContext(stackRungs, detailsByRepo)
   let skippedCount = 0
 
   const skip = (pr: SearchPR, detail: PRDetail | null): void => {
     skippedCount++
-    if (detail) linkOnly.push(buildClassified(pr, detail, 'skipped'))
+    if (detail) context.push(buildClassified(pr, detail, pr.isDraft ? 'draft' : 'skipped'))
   }
 
   for (const pr of searchResults) {
@@ -103,17 +102,17 @@ export function classifyReviewPRs(
     if (pr.isDraft) { skip(pr, detail); continue }
     if (!detail) { skippedCount++; continue }
     if (detail.viewerReviewState === 'APPROVED') { skip(pr, detail); continue }
-    if (isCIInFlight(detail.ciState) || isCIFailing(detail.ciState)) { skip(pr, detail); continue }
 
     // Conflicts deliberately don't block here: they stop a merge, not a review. They still show
     // as an inline pill on the row so you can see one without switching tabs.
-    const classified = buildClassified(pr, detail, detail.unresolvedThreads > 0 ? 'blocked' : 'ready')
+    const ciRed = isCIInFlight(detail.ciState) || isCIFailing(detail.ciState)
+    const classified = buildClassified(pr, detail, ciRed || detail.unresolvedThreads > 0 ? 'blocked' : 'ready')
 
     if (classified.bucket === 'ready') ready.push(classified)
     else blocked.push(classified)
   }
 
-  const partitioned = partitionStacks({ ready, blocked }, ['ready', 'blocked'], linkOnly)
+  const partitioned = partitionStacks({ ready, blocked }, ['ready', 'blocked'], context)
   return { ...partitioned.buckets, stacks: partitioned.stacks, skippedCount }
 }
 
@@ -133,6 +132,7 @@ export interface MyPRsResult {
 export function classifyMyPRs(
   searchResults: SearchPR[],
   detailsByRepo: Map<string, PRDetail[]>,
+  stackRungs: SearchPR[] = [],
 ): MyPRsResult {
   const readyToMerge: ClassifiedPR[] = []
   const needsReview: ClassifiedPR[] = []
@@ -176,6 +176,7 @@ export function classifyMyPRs(
   const partitioned = partitionStacks(
     { readyToMerge, needsReview, blocked, building, failing, drafts },
     ['readyToMerge', 'needsReview', 'blocked', 'building', 'failing', 'drafts'],
+    classifyContext(stackRungs, detailsByRepo),
   )
   return { ...partitioned.buckets, stacks: partitioned.stacks, recentlyMerged: [] }
 }
@@ -267,6 +268,13 @@ export function classifyDependabotPRs(
 }
 
 // ── Helpers ──
+
+function classifyContext(prs: SearchPR[], detailsByRepo: Map<string, PRDetail[]>): ClassifiedPR[] {
+  return prs.flatMap((pr) => {
+    const detail = findDetail(pr, detailsByRepo)
+    return detail ? [buildClassified(pr, detail, pr.isDraft ? 'draft' : 'skipped')] : []
+  })
+}
 
 function findDetail(pr: SearchPR, detailsByRepo: Map<string, PRDetail[]>): PRDetail | undefined {
   return detailsByRepo.get(pr.repo)?.find((d) => d.number === pr.number)

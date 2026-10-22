@@ -251,6 +251,8 @@ tr.merged:hover { opacity: 1; }
 .state-pill.conflicts { color: var(--red); border-color: var(--red); text-decoration: none; }
 a.state-pill.conflicts:hover { text-decoration: underline; }
 .state-pill.threads { color: var(--yellow); border-color: var(--yellow); }
+.state-pill.ci-red { color: var(--red); border-color: var(--red); text-decoration: none; }
+.state-pill.ci-running { color: var(--link); border-color: var(--link); text-decoration: none; }
 a.thread-link { text-decoration: none; color: inherit; }
 a.thread-link:hover { text-decoration: underline; }
 .title-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -705,6 +707,7 @@ footer { font-size: 13px; color: var(--text-muted); padding-top: 16px; border-to
 .stack-row.stack-bottom .stack-pos-cell { color: var(--green); }
 .stack-row.stack-bottom .stack-rail { color: var(--green); opacity: 1; }
 .stack-row.stack-mergeable { background: rgba(63, 185, 80, 0.05); }
+.stack-row.stack-context { opacity: 0.55; }
 .stack-batch { color: var(--green); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
 
 .chip {

@@ -61,8 +61,16 @@ function rowIndicators(pr: ClassifiedPR, suppressed: boolean): string {
   return conflictPillHtml(pr, 'inline-pill')
 }
 
+function ciPillHtml(pr: ClassifiedPR): string {
+  if (isCIFailing(pr.ciState)) return pillHtml('state-pill ci-red', `${pr.url}/checks`, 'Open checks on GitHub', 'CI failing')
+  if (isCIInFlight(pr.ciState)) return pillHtml('state-pill ci-running', `${pr.url}/checks`, 'Open checks on GitHub', 'CI running')
+  return ''
+}
+
 function renderBlockReasons(pr: ClassifiedPR, theme: ThemeConfig): string {
   const pills: string[] = []
+  const ci = ciPillHtml(pr)
+  if (ci) pills.push(ci)
   if (pr.hasConflicts) pills.push(conflictPillHtml(pr))
   if (pr.unresolvedThreads > 0) pills.push(threadPillHtml(pr, theme))
   if (pills.length === 0) return '<span class="env-empty">—</span>'
@@ -269,6 +277,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
     const row = document.createElement('tr')
     row.className = index === 0 ? 'stack-row stack-bottom' : 'stack-row'
     if (stack.mergeBatch.includes(pr.number)) row.classList.add('stack-mergeable')
+    if (member.context) row.classList.add('stack-context')
     if (isCIInFlight(pr.ciState)) row.classList.add(isStalledBuild(pr) ? 'stalled' : 'building')
     row.innerHTML = [
       `<td class="stack-pos-cell"><span class="stack-pos"><span class="stack-rail">${railFor(index)}</span><span class="stack-num">${position}</span></span></td>`,
@@ -292,7 +301,7 @@ function buildStackCard(stack: StackGroup, theme: ThemeConfig): HTMLElement {
   if (stack.hiddenCount > 0) {
     const note = document.createElement('p')
     note.className = 'stack-hidden-note'
-    note.textContent = `${stack.hiddenCount} more PR${stack.hiddenCount === 1 ? '' : 's'} in this stack not in your queue`
+    note.textContent = `${stack.hiddenCount} more PR${stack.hiddenCount === 1 ? '' : 's'} in this stack could not be loaded`
     card.appendChild(note)
   }
 
