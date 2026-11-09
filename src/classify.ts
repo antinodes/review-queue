@@ -18,6 +18,14 @@ export function isCIInFlight(state: string | null): boolean {
   return CI_IN_FLIGHT.has(state ?? '')
 }
 
+type MergeGate = Pick<ClassifiedPR, 'ciState' | 'mergeStateStatus' | 'reviewDecision' | 'unresolvedThreads'>
+
+// Approved with nothing else outstanding, yet GitHub still says BLOCKED: required checks never reported.
+export function isCIMissing(pr: MergeGate): boolean {
+  return pr.ciState === null && pr.mergeStateStatus === 'BLOCKED'
+    && pr.reviewDecision === 'APPROVED' && pr.unresolvedThreads === 0
+}
+
 /**
  * How long a build may run before the queue calls it stuck. Deliberately several times a normal
  * run (a typical Seerist suite finishes in under ten minutes) so that a slow build is not
@@ -161,7 +169,7 @@ export function classifyMyPRs(
       continue
     }
 
-    if (detail.unresolvedThreads > 0 || detail.mergeable === 'CONFLICTING') {
+    if (detail.unresolvedThreads > 0 || detail.mergeable === 'CONFLICTING' || isCIMissing(detail)) {
       blocked.push(buildClassified(pr, detail, 'blocked'))
       continue
     }
