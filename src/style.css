@@ -253,6 +253,7 @@ a.state-pill.conflicts:hover { text-decoration: underline; }
 .state-pill.threads { color: var(--yellow); border-color: var(--yellow); }
 .state-pill.ci-red { color: var(--red); border-color: var(--red); text-decoration: none; }
 .state-pill.ci-running { color: var(--link); border-color: var(--link); text-decoration: none; }
+.state-pill.no-reviewer { color: var(--yellow); border-color: var(--yellow); text-decoration: none; }
 a.thread-link { text-decoration: none; color: inherit; }
 a.thread-link:hover { text-decoration: underline; }
 .title-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; }
