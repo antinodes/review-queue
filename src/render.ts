@@ -1,5 +1,5 @@
 import type { ClassifiedPR } from './classify.ts'
-import { groupByRepo, isCIFailing, isCIInFlight, isStalledBuild, STALLED_BUILD_MINUTES } from './classify.ts'
+import { groupByRepo, isCIFailing, isCIInFlight, isCIMissing, isStalledBuild, STALLED_BUILD_MINUTES } from './classify.ts'
 import type { StackGroup, StackMember } from './stacks.ts'
 import type { ThemeConfig } from './themes.ts'
 
@@ -64,6 +64,7 @@ function rowIndicators(pr: ClassifiedPR, suppressed: boolean): string {
 function ciPillHtml(pr: ClassifiedPR): string {
   if (isCIFailing(pr.ciState)) return pillHtml('state-pill ci-red', `${pr.url}/checks`, 'Open checks on GitHub', 'CI failing')
   if (isCIInFlight(pr.ciState)) return pillHtml('state-pill ci-running', `${pr.url}/checks`, 'Open checks on GitHub', 'CI running')
+  if (isCIMissing(pr)) return pillHtml('state-pill ci-red', `${pr.url}/checks`, 'Required checks never reported', "CI didn't run")
   return ''
 }
 
