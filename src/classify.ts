@@ -40,6 +40,7 @@ export interface ClassifiedPR {
   daysOpen: string
   bucket: Bucket
   unresolvedThreads: number
+  hasNoReviewer: boolean
   ciState: string | null
   /** Minutes the still-running part of CI has been going, or null when nothing is running. */
   buildMinutes: number | null
@@ -294,6 +295,7 @@ function buildClassified(pr: SearchPR, detail: PRDetail | null, bucket: Bucket):
     ageMinutes: age.minutes,
     bucket,
     unresolvedThreads: detail?.unresolvedThreads ?? 0,
+    hasNoReviewer: detail?.hasNoReviewer ?? false,
     ciState: detail?.ciState ?? null,
     buildMinutes: elapsedMinutes(detail?.buildStartedAt ?? null),
     hasConflicts: detail?.mergeable === 'CONFLICTING',

@@ -47,6 +47,7 @@ export interface ThemeConfig {
   colDeployed: string
   colVersion: string
   colReason: string
+  pillNoReviewer: string
   colPos: string
   typeLabels: Record<string, string>
   typeIconMode: 'badge' | 'rpg-awesome'
@@ -90,6 +91,7 @@ const defaultCols = {
   colOpen: 'Open', colCI: 'CI',
   colBase: 'Merged Into', colMerged: 'Merged', colDeployed: 'Deployed', colVersion: 'Version',
   colReason: 'Reason', colPos: '#',
+  pillNoReviewer: 'no reviewer',
 }
 
 export const themes: Record<string, ThemeConfig> = {
@@ -180,6 +182,7 @@ export const themes: Record<string, ThemeConfig> = {
     colDeployed: 'Realms',
     colVersion: 'Sigil',
     colReason: 'Strife',
+    pillNoReviewer: 'No Allies',
     colPos: 'Rung',
     typeLabels: {
       feat: 'Venture', fix: 'Mend', build: 'Forge', chore: 'Forge',

@@ -55,10 +55,16 @@ function threadPillHtml(pr: ClassifiedPR, theme: ThemeConfig): string {
   return pillHtml(cls, pr.url, 'Open conversation on GitHub', inner)
 }
 
-// Suppressed where the Reason column already carries the same pill.
-function rowIndicators(pr: ClassifiedPR, suppressed: boolean): string {
-  if (suppressed || !pr.hasConflicts) return ''
-  return conflictPillHtml(pr, 'inline-pill')
+function noReviewerPillHtml(pr: ClassifiedPR, theme: ThemeConfig): string {
+  return pillHtml('state-pill no-reviewer inline-pill', pr.url, 'No reviewer requested', escapeHtml(theme.pillNoReviewer))
+}
+
+// Conflicts are suppressed where the Reason column already carries the same pill.
+function rowIndicators(pr: ClassifiedPR, theme: ThemeConfig, hasReasonColumn: boolean): string {
+  const pills: string[] = []
+  if (pr.hasConflicts && !hasReasonColumn) pills.push(conflictPillHtml(pr, 'inline-pill'))
+  if (pr.bucket === 'needsReview' && pr.hasNoReviewer) pills.push(noReviewerPillHtml(pr, theme))
+  return pills.join('')
 }
 
 function ciPillHtml(pr: ClassifiedPR): string {
@@ -369,7 +375,7 @@ export function renderSection(
     const tbody = document.createElement('tbody')
     for (const pr of repoPRs) {
       const { type, rest } = extractType(pr.title)
-      const indicators = rowIndicators(pr, showBlockReasons)
+      const indicators = rowIndicators(pr, theme, showBlockReasons)
       const branchBtn = !mergedColumn && pr.headRefName
         ? ` <button type="button" class="branch-btn" data-branch="${escapeHtml(pr.headRefName)}" aria-label="Copy branch ${escapeHtml(pr.headRefName)}">\u2387</button>`
         : ''
