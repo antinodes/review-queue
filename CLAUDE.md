@@ -37,7 +37,7 @@ The merged section costs more on top of that: `fetchRepoDeployments` (paginated,
 - `classifyMyPRs` — keeps everything including drafts and failing CI, buckets by `ciState` → `unresolvedThreads`/conflicts → `reviewDecision`.
 - `classifyDependabotPRs` — filtered upstream via `isDependabot` (matches `dependabot[bot]` author), keeps failing/blocked/ready.
 
-**CI state is three-valued, and null is not failure.** `isCIFailing` (`FAILURE`/`ERROR`) and `isCIInFlight` (`PENDING`/`EXPECTED`) are the only two predicates; a null rollup means no checks ran at all and must fall through to the thread and review checks. A repo with no workflows landing in Failing CI is the bug this prevents.
+**CI state is three-valued, and null is not failure.** `isCIFailing` (`FAILURE`/`ERROR`) and `isCIInFlight` (`PENDING`/`EXPECTED`) are the only two predicates; a null rollup means no checks ran at all and must fall through to the thread and review checks. A repo with no workflows landing in Failing CI is the bug this prevents. The one exception is `isCIMissing`: null CI on an approved PR with no open threads that GitHub still reports `BLOCKED` means required checks never reported, so My PRs files it under Blocked with a "CI didn't run" pill.
 
 **`stacks.ts`** groups stacked PRs so a chain renders once, in order, instead of scattering across buckets. Two sources: GitHub's native stack API (`stack`/`stackEntry`, and `stack.entries` for the rungs we can't otherwise see) and a fallback that infers chains from branch bases. Three invariants worth preserving:
 - Head branches are keyed by **owner plus branch** (`headKey`). Fork PRs are routinely opened from `main`, and an unqualified key makes every PR targeting `main` a child of some stranger's fork PR.
