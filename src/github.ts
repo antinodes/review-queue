@@ -33,6 +33,8 @@ export interface PRDetail {
   mergeCommitOid: string | null
   ciState: string | null
   unresolvedThreads: number
+  /** Nobody requested and nobody has reviewed, so the PR is waiting on an author action. */
+  hasNoReviewer: boolean
   reviewDecision: string | null
   viewerReviewState: string | null
   timelineEvents: TimelineEvent[]
@@ -160,6 +162,8 @@ interface RawPRDetail {
   latestOpinionatedReviews?: {
     nodes: Array<{ author: { login: string }; state: string }>
   }
+  reviewRequests?: { totalCount: number }
+  latestReviews?: { totalCount: number }
   reviewThreads?: {
     nodes: Array<{ isResolved: boolean }>
   }
@@ -349,6 +353,8 @@ function buildPRFragment(number: number): string {
         latestOpinionatedReviews(first: 20) {
           nodes { author { login } state }
         }
+        reviewRequests(first: 1) { totalCount }
+        latestReviews(first: 1) { totalCount }
         reviewThreads(first: 100) {
           nodes { isResolved }
         }
@@ -526,6 +532,7 @@ function toPRDetail(repo: string, num: number, pr: RawPRDetail, viewerLogin: str
   const ciState = commitNode?.commit?.statusCheckRollup?.state ?? null
   const buildStartedAt = earliestRunningSuite(commitNode?.commit?.checkSuites?.nodes ?? [])
   const unresolvedThreads = pr.reviewThreads?.nodes.filter((t) => !t.isResolved).length ?? 0
+  const hasNoReviewer = pr.reviewRequests?.totalCount === 0 && pr.latestReviews?.totalCount === 0
 
   const timelineEvents: TimelineEvent[] = (pr.timelineItems?.nodes ?? []).map((n) => ({
     type: n.__typename as TimelineEvent['type'],
@@ -553,5 +560,5 @@ function toPRDetail(repo: string, num: number, pr: RawPRDetail, viewerLogin: str
       }
     : null
 
-  return { number: num, summary, headRefName: pr.headRefName, baseRefName: pr.baseRefName, mergedAt: pr.mergedAt, mergeCommitOid: pr.mergeCommit?.oid ?? null, ciState, unresolvedThreads, reviewDecision: pr.reviewDecision ?? null, viewerReviewState, timelineEvents, stack, buildStartedAt, mergeStateStatus: pr.mergeStateStatus ?? null, mergeable: pr.mergeable ?? null, headRepo: pr.headRepository?.nameWithOwner ?? '' }
+  return { number: num, summary, headRefName: pr.headRefName, baseRefName: pr.baseRefName, mergedAt: pr.mergedAt, mergeCommitOid: pr.mergeCommit?.oid ?? null, ciState, unresolvedThreads, hasNoReviewer, reviewDecision: pr.reviewDecision ?? null, viewerReviewState, timelineEvents, stack, buildStartedAt, mergeStateStatus: pr.mergeStateStatus ?? null, mergeable: pr.mergeable ?? null, headRepo: pr.headRepository?.nameWithOwner ?? '' }
 }
