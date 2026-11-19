@@ -16,6 +16,10 @@ export interface StackMember {
   context: boolean
 }
 
+export function countOwnRungs(stacks: StackGroup[], keep: (pr: ClassifiedPR) => boolean = () => true): number {
+  return stacks.reduce((sum, s) => sum + s.members.filter((m) => !m.context && keep(m.pr)).length, 0)
+}
+
 export interface StackGroup {
   key: string
   repo: string

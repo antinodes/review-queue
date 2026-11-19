@@ -1,5 +1,5 @@
 import type { SearchPR, PRDetail, StackRef } from './github.ts'
-import { buildStacks, stackMemberKeys, prKey } from './stacks.ts'
+import { buildStacks, stackMemberKeys, prKey, countOwnRungs } from './stacks.ts'
 import type { StackGroup } from './stacks.ts'
 
 export type Bucket = 'ready' | 'blocked' | 'skipped' | 'failing' | 'building' | 'needsReview' | 'draft' | 'merged'
@@ -60,6 +60,7 @@ export interface ClassifiedPR {
   mergeStateStatus: string | null
   reviewDecision: string | null
   headRepo: string
+  viewerApproved: boolean
 }
 
 // ── Review queue classification (PRs requesting my review) ──
@@ -276,6 +277,27 @@ export function classifyDependabotPRs(
   return { ready, blocked, building, failing }
 }
 
+// ── Counts of PRs waiting on the viewer ──
+
+// Stacked PRs are lifted out of `ready` but may still be waiting on you, so the counts include
+// the stacked rungs that would otherwise have landed there.
+export function reviewsAwaitingViewer(r: ReviewResult): number {
+  return r.ready.length + countOwnRungs(r.stacks, (pr) => pr.bucket === 'ready')
+}
+
+const needsAuthorAction = (pr: ClassifiedPR): boolean =>
+  pr.bucket === 'ready' || (pr.bucket === 'blocked' && pr.unresolvedThreads > 0)
+
+export function myPRsNeedingAction(m: MyPRsResult): number {
+  return m.readyToMerge.length
+    + m.blocked.filter((pr) => pr.unresolvedThreads > 0).length
+    + countOwnRungs(m.stacks, needsAuthorAction)
+}
+
+export function dependabotAwaitingViewer(d: DependabotResult): number {
+  return d.ready.filter((pr) => !pr.viewerApproved).length
+}
+
 // ── Helpers ──
 
 function classifyContext(prs: SearchPR[], detailsByRepo: Map<string, PRDetail[]>): ClassifiedPR[] {
@@ -313,6 +335,7 @@ function buildClassified(pr: SearchPR, detail: PRDetail | null, bucket: Bucket):
     mergeStateStatus: detail?.mergeStateStatus ?? null,
     reviewDecision: detail?.reviewDecision ?? null,
     headRepo: detail?.headRepo ?? '',
+    viewerApproved: detail?.viewerReviewState === 'APPROVED',
   }
 }
 
