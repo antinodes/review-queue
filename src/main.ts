@@ -1,8 +1,8 @@
 import { searchReviewing, searchAuthored, searchMergedAuthored, fetchPRDetails, fetchRepoDeployments, fetchViewerLogin, isAncestor, isReleaseDeploy, releaseVersion, RateLimitError, rateLimitedUntil, clearRateLimit } from './github.ts'
 import type { SearchPR, RepoDeployment, PRDetail } from './github.ts'
-import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, classifyMergedPRs, isDependabot, lastBusinessDayCutoff } from './classify.ts'
+import { classifyReviewPRs, classifyMyPRs, classifyDependabotPRs, classifyMergedPRs, isDependabot, lastBusinessDayCutoff, reviewsAwaitingViewer, myPRsNeedingAction, dependabotAwaitingViewer } from './classify.ts'
 import type { ReviewResult, MyPRsResult, DependabotResult, PRMergedMetadata } from './classify.ts'
-import type { StackGroup } from './stacks.ts'
+import { countOwnRungs } from './stacks.ts'
 import { renderSection, renderStacks, renderSummary, renderError } from './render.ts'
 import { getToken, saveToken, clearToken } from './token.ts'
 import { beginOAuth, handleOAuthCallback, oauthEnabled, patEnabled } from './auth.ts'
@@ -53,6 +53,7 @@ function signOut(): void {
   cachedReviews = null
   cachedMyPRs = null
   cachedDependabot = null
+  updateTabButtons()
   $('error').classList.add('hidden')
   showAuthPrompt()
 }
@@ -64,13 +65,25 @@ function switchTab(tab: typeof activeTab): void {
   for (const t of ['reviews', 'myPRs', 'dependabot'] as const) {
     $(`tab-${t}`).classList.toggle('hidden', t !== tab)
   }
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.tab === tab)
-  })
   renderActiveTab()
 }
 
+function pendingCount(tab: typeof activeTab): number {
+  if (tab === 'reviews') return cachedReviews ? reviewsAwaitingViewer(cachedReviews) : 0
+  if (tab === 'myPRs') return cachedMyPRs ? myPRsNeedingAction(cachedMyPRs) : 0
+  return cachedDependabot ? dependabotAwaitingViewer(cachedDependabot) : 0
+}
+
+function updateTabButtons(): void {
+  document.querySelectorAll<HTMLElement>('.tab-btn').forEach((btn) => {
+    const tab = btn.dataset.tab as typeof activeTab
+    btn.classList.toggle('active', tab === activeTab)
+    btn.classList.toggle('has-pending', tab !== activeTab && pendingCount(tab) > 0)
+  })
+}
+
 function renderActiveTab(): void {
+  updateTabButtons()
   if (!hasLoadedOnce) return
   const t = activeTheme
 
@@ -83,7 +96,7 @@ function renderActiveTab(): void {
     renderStacks($('reviews-stacks'), r.stacks, t, true)
     renderSection($('reviews-ready'), r.ready, t)
     renderSection($('reviews-blocked'), r.blocked, t, { showBlockReasons: true })
-    const stackedReviews = countStacked(r.stacks)
+    const stackedReviews = countOwnRungs(r.stacks)
     const stackSuffix = stackedReviews > 0 ? `, ${stackedReviews} stacked` : ''
     renderSummary($('reviews-summary'),
       `${r.ready.length} ready, ${r.blocked.length} blocked${stackSuffix}, ${r.skippedCount} skipped`)
@@ -108,7 +121,7 @@ function renderActiveTab(): void {
     renderSection($('my-failing'), m.failing, t, { showCI: true, showAuthor: false })
     renderSection($('my-draft'), m.drafts, t, { showAuthor: false })
     renderSection($('my-merged'), m.recentlyMerged, t, { showAuthor: false, showBaseBranch: true, showDeployedEnvs: true, showVersion: true, mergedColumn: true })
-    const stacked = countStacked(m.stacks)
+    const stacked = countOwnRungs(m.stacks)
     const total = m.readyToMerge.length + m.needsReview.length + m.blocked.length + m.building.length + m.failing.length + m.drafts.length + stacked
     const stackPrefix = m.stacks.length > 0 ? `${stacked} in ${m.stacks.length} stack${m.stacks.length === 1 ? '' : 's'}, ` : ''
     const mergedSuffix = m.recentlyMerged.length > 0 ? ` · ${m.recentlyMerged.length} recently merged` : ''
@@ -136,17 +149,7 @@ function setText(id: string, text: string): void {
   $(id).textContent = text
 }
 
-function countStacked(stacks: StackGroup[]): number {
-  return stacks.reduce((sum, s) => sum + s.members.filter((m) => !m.context).length, 0)
-}
 
-// Stacked PRs are lifted out of `ready` but may still be waiting on you, so the badge counts
-// the stacked rungs that would otherwise have landed there.
-function reviewableCount(r: ReviewResult): number {
-  const stacked = r.stacks.reduce(
-    (sum, s) => sum + s.members.filter((m) => m.pr.bucket === 'ready').length, 0)
-  return r.ready.length + stacked
-}
 
 // Hide the whole <section> so an empty Stacks heading doesn't sit above every other tab.
 function toggleSection(containerId: string, visible: boolean): void {
@@ -374,7 +377,7 @@ async function loadQueue(token: string): Promise<void> {
 
     renderActiveTab()
     updateTimestamp()
-    updateBadge(reviewableCount(cachedReviews))
+    updateBadge(reviewsAwaitingViewer(cachedReviews))
   } catch (err) {
     $('loading').classList.add('hidden')
     $('progress-bar').classList.remove('active')
